@@ -1,0 +1,227 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Ethereum Sepolia 工具 Demo｜目标架构（尚未实现）",
+    "locale": "zh-CN",
+    "output": "ethereum-util-demo.architecture.html",
+    "quality_profile": "showcase",
+    "viewBox": [1380, 820],
+    "views": [
+      {
+        "id": "global-architecture",
+        "label": "全局架构",
+        "focus": ["common_header", "token_inspector", "transfer_panel", "account_vault", "token_compatibility", "transfer_engine", "rpc_adapter", "publicnode", "sepolia", "erc20_contract", "etherscan"],
+        "note": "Vue 界面只调用一个深 EthereumTool 模块；应用没有自有后端。"
+      },
+      {
+        "id": "account-session",
+        "label": "账户会话与 ETH 查询",
+        "focus": ["common_header", "account_vault", "rpc_adapter", "publicnode", "sepolia", "etherscan"],
+        "note": "专用测试私钥只进入模块私有内存；锁定、刷新或关闭页面后会话结束。"
+      },
+      {
+        "id": "token-compatibility",
+        "label": "Token 兼容性检查",
+        "focus": ["token_inspector", "token_compatibility", "account_vault", "rpc_adapter", "publicnode", "sepolia", "erc20_contract", "etherscan"],
+        "note": "检查 bytecode、decimals 与 balanceOf；name 和 symbol 可缺失，不宣称完整 ERC-20 合规。"
+      },
+      {
+        "id": "transfer-lifecycle",
+        "label": "转账、同字节重试与确认",
+        "focus": ["transfer_panel", "account_vault", "token_compatibility", "transfer_engine", "rpc_adapter", "publicnode", "sepolia", "erc20_contract", "etherscan"],
+        "note": "先模拟、准备并本地签名；广播不确定时只能重发同一 signed raw transaction 或查询原 hash。"
+      }
+    ]
+  },
+  "components": [
+    {
+      "id": "common_header",
+      "type": "frontend",
+      "label": "Common Header",
+      "sublabel": "导入 / 地址 / ETH / 刷新 / 锁定",
+      "pos": [60, 150],
+      "size": [230, 78]
+    },
+    {
+      "id": "token_inspector",
+      "type": "frontend",
+      "label": "Token Inspector",
+      "sublabel": "输入地址并显式查询",
+      "pos": [60, 390],
+      "size": [230, 78]
+    },
+    {
+      "id": "transfer_panel",
+      "type": "frontend",
+      "label": "Token Transfer",
+      "sublabel": "recipient / amount / 状态与恢复",
+      "pos": [60, 630],
+      "size": [230, 78]
+    },
+    {
+      "id": "account_vault",
+      "type": "security",
+      "label": "账户会话保管",
+      "sublabel": "LocalAccount｜非响应式闭包",
+      "tag": "Private key never leaves module",
+      "pos": [430, 150],
+      "size": [245, 78]
+    },
+    {
+      "id": "token_compatibility",
+      "type": "frontend",
+      "label": "Token 兼容性规则",
+      "sublabel": "code / decimals / metadata / balanceOf",
+      "pos": [430, 390],
+      "size": [245, 78]
+    },
+    {
+      "id": "transfer_engine",
+      "type": "security",
+      "label": "转账状态机",
+      "sublabel": "账户 + Token｜simulate / sign / receipt",
+      "tag": "Exact signed bytes retry",
+      "pos": [430, 630],
+      "size": [245, 78]
+    },
+    {
+      "id": "rpc_adapter",
+      "type": "frontend",
+      "label": "RPC Adapter",
+      "sublabel": "ViemSepoliaRpcAdapter",
+      "tag": "Scripted adapter in module tests",
+      "pos": [790, 390],
+      "size": [245, 78]
+    },
+    {
+      "id": "publicnode",
+      "type": "external",
+      "label": "PublicNode",
+      "sublabel": "默认 Sepolia HTTPS RPC",
+      "tag": "可在当前页面原子切换",
+      "pos": [1120, 390],
+      "size": [200, 78]
+    },
+    {
+      "id": "sepolia",
+      "type": "cloud",
+      "label": "Ethereum Sepolia",
+      "sublabel": "chainId 11155111",
+      "pos": [1120, 550],
+      "size": [200, 78]
+    },
+    {
+      "id": "erc20_contract",
+      "type": "external",
+      "label": "目标 Token 合约",
+      "sublabel": "读取、模拟与执行 transfer",
+      "pos": [1120, 710],
+      "size": [200, 78]
+    },
+    {
+      "id": "etherscan",
+      "type": "external",
+      "label": "Sepolia Etherscan",
+      "sublabel": "地址 / Token / Transaction 页面",
+      "tag": "仅由用户主动打开",
+      "pos": [1120, 150],
+      "size": [200, 78]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "security-group",
+      "label": "本地浏览器运行时｜Vue SPA｜无自有后端",
+      "wraps": ["common_header", "token_inspector", "transfer_panel", "account_vault", "token_compatibility", "transfer_engine", "rpc_adapter"],
+      "pad": 30
+    },
+    {
+      "kind": "security-group",
+      "label": "EthereumTool｜模块内私密状态与规则",
+      "wraps": ["account_vault", "token_compatibility", "transfer_engine", "rpc_adapter"],
+      "pad": 24
+    },
+    {
+      "kind": "region",
+      "label": "外部系统｜第三方 RPC 与公开 Sepolia 数据",
+      "wraps": ["publicnode", "sepolia", "erc20_contract", "etherscan"],
+      "pad": 24
+    }
+  ],
+  "connections": [
+    {
+      "id": "header_to_account",
+      "from": "common_header",
+      "to": "account_vault",
+      "label": "导入 / 锁定 / 查询 ETH",
+      "variant": "security"
+    },
+    {
+      "id": "inspector_to_compatibility",
+      "from": "token_inspector",
+      "to": "token_compatibility",
+      "label": "查询 Token 地址"
+    },
+    {
+      "id": "panel_to_transfer",
+      "from": "transfer_panel",
+      "to": "transfer_engine",
+      "label": "提交 recipient 与展示金额",
+      "variant": "emphasis"
+    },
+    {
+      "id": "account_to_rpc",
+      "from": "account_vault",
+      "to": "rpc_adapter",
+      "label": "地址 / ETH balance"
+    },
+    {
+      "id": "compatibility_to_rpc",
+      "from": "token_compatibility",
+      "to": "rpc_adapter",
+      "label": "eth_call 检查",
+      "labelAt": [630, 482]
+    },
+    {
+      "id": "transfer_to_rpc",
+      "from": "transfer_engine",
+      "to": "rpc_adapter",
+      "label": "simulate / broadcast / receipt",
+      "variant": "emphasis"
+    },
+    {
+      "id": "rpc_to_publicnode",
+      "from": "rpc_adapter",
+      "to": "publicnode",
+      "label": "Sepolia JSON-RPC over HTTPS",
+      "variant": "emphasis",
+      "labelAt": [1088, 482]
+    },
+    {
+      "id": "publicnode_to_sepolia",
+      "from": "publicnode",
+      "to": "sepolia",
+      "label": "转发 JSON-RPC",
+      "labelAt": [1260, 500]
+    },
+    {
+      "id": "sepolia_to_token",
+      "from": "sepolia",
+      "to": "erc20_contract",
+      "label": "eth_call / 执行 transfer",
+      "variant": "emphasis",
+      "labelAt": [1260, 665]
+    }
+  ],
+  "cards": [
+    {
+      "dot": "amber",
+      "title": "首版不包含",
+      "items": [
+        "主网、公开部署、注入式钱包、自有后端、Serverless、RPC Proxy",
+        "自动重试、站内领取 Token、完整 ERC-20 合规证明、视觉 UI 设计"
+      ]
+    }
+  ]
+}

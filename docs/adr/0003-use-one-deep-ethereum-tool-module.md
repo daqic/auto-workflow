@@ -1,0 +1,7 @@
+# Use one deep Ethereum tool module
+
+The application will expose one framework-independent `EthereumTool` Module with grouped network, account, Token, and transfer intents plus an immutable public snapshot. Vue will share one instance through `provide/inject` and keep ordinary form drafts outside the Module, while the Module hides the Local Account, Token compatibility rules, transfer state machine, signed transaction retry, and derived control availability; Pinia will not hold this state.
+
+The only external seam inside the Module is RPC access, with a viem HTTP Adapter in the application and a scripted Adapter in tests. Local signing remains an in-process implementation detail rather than a hypothetical signer seam, and the Vue Interface never exposes viem clients, signed transaction bytes, nonce, Gas, or fee controls.
+
+Module tests replace the HTTP Adapter with a scripted Sepolia RPC Adapter, while Playwright intercepts the production Adapter's JSON-RPC requests rather than starting another blockchain toolchain. Automated tests generate ephemeral private keys at runtime, and live Sepolia checks remain manual smoke tests instead of CI gates.
