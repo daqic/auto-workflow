@@ -1226,10 +1226,10 @@ describe('EthereumTool Token Transfer', () => {
     await tool.network.initialize()
     await tool.account.importPrivateKey(generatePrivateKey())
     await tool.token.inspect(tokenAddress)
+    const unsubscribe = tool.subscribe(({ transfer }) => transferStages.push(transfer.status))
 
     expect(await tool.transfer.submit({ amount: '1', recipient })).toBe(false)
     const originalHash = tool.read().transfer.hash
-    const unsubscribe = tool.subscribe(({ transfer }) => transferStages.push(transfer.status))
 
     expect(await tool.transfer.replay()).toBe(true)
     unsubscribe()
@@ -1240,8 +1240,9 @@ describe('EthereumTool Token Transfer', () => {
     expect(queriedHashes).toEqual([originalHash])
     expect(simulationCount).toBe(1)
     expect(preparationCount).toBe(1)
-    expect(transferStages).not.toContain('checking')
-    expect(transferStages).not.toContain('signing')
+    expect(transferStages.filter((status) => status === 'checking')).toHaveLength(1)
+    expect(transferStages.filter((status) => status === 'signing')).toHaveLength(1)
+    expect(transferStages.filter((status) => status === 'replaying')).toHaveLength(1)
     expect(tool.read().transfer).toMatchObject({
       canSubmit: false,
       error: null,

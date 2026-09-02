@@ -234,7 +234,7 @@ async function installTransferRpcScenario(page: Page, scenario: TransferRpcScena
       rawTransactionSubmissions += 1
 
       if (scenario.broadcast === 'ambiguous-once' && rawTransactionSubmissions === 1) {
-        await route.abort('failed')
+        await fulfillRpcError(route, -32_000, 'already known')
         return
       }
 

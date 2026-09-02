@@ -22,6 +22,14 @@ const ERC20_INSPECTION_ABI = parseAbi([
   'function transfer(address recipient, uint256 amount) returns (bool)',
 ])
 
+function isDefinitelyRejectedRawTransaction(error: unknown) {
+  if (!(error instanceof InvalidInputRpcError) && !(error instanceof TransactionRejectedRpcError)) {
+    return false
+  }
+
+  return error.details.toLowerCase().includes('insufficient funds')
+}
+
 export function createViemSepoliaRpcAdapter(): SepoliaRpcAdapter {
   function createClient(rpcUrl: string) {
     return createPublicClient({
@@ -111,10 +119,7 @@ export function createViemSepoliaRpcAdapter(): SepoliaRpcAdapter {
       try {
         return await client.sendRawTransaction({ serializedTransaction: signedTransaction })
       } catch (error) {
-        if (
-          !(error instanceof InvalidInputRpcError) &&
-          !(error instanceof TransactionRejectedRpcError)
-        ) {
+        if (!isDefinitelyRejectedRawTransaction(error)) {
           throw error
         }
 

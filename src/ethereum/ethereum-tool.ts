@@ -454,6 +454,10 @@ function isTransferInteractionLocked(status: TransferStatus): boolean {
   return TRANSFER_STATUS_CAPABILITIES[status].interactionLocked
 }
 
+function canDiscardUnresolvedTransfer(status: TransferStatus): boolean {
+  return status === 'broadcast-error' || status === 'confirming'
+}
+
 function freezeSnapshot(
   network: NetworkState,
   account: AccountState,
@@ -469,8 +473,7 @@ function freezeSnapshot(
   const isTransferLocked = isTransferInteractionLocked(transfer.status)
   const transferCapabilities = TRANSFER_STATUS_CAPABILITIES[transfer.status]
   const hasRecoveryActions =
-    hasUnresolvedSignedTransaction &&
-    (transfer.status === 'broadcast-error' || transfer.status === 'confirming')
+    hasUnresolvedSignedTransaction && canDiscardUnresolvedTransfer(transfer.status)
   const isFormVisible =
     hasActiveAccount &&
     ((token.status === 'compatible' && token.balance !== null) || transfer.status !== 'editing')
@@ -521,7 +524,7 @@ function freezeSnapshot(
       canReplay:
         hasUnresolvedSignedTransaction &&
         transfer.hash !== null &&
-        (transfer.status === 'broadcast-error' || transfer.status === 'confirming'),
+        canDiscardUnresolvedTransfer(transfer.status),
       canStartNew: transferCapabilities.canStartNew,
       canSubmit:
         canUseChainActions &&
@@ -868,10 +871,7 @@ export function createEthereumTool({ rpc }: { rpc: SepoliaRpcAdapter }): Ethereu
 
     if (
       isTransferInteractionLocked(transferState.status) &&
-      !(
-        unresolvedSignedTransaction &&
-        (transferState.status === 'broadcast-error' || transferState.status === 'confirming')
-      )
+      !(unresolvedSignedTransaction && canDiscardUnresolvedTransfer(transferState.status))
     ) {
       return false
     }
