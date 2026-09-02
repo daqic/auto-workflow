@@ -38,14 +38,6 @@ const transactionHashLabel = computed(() => {
 
   return '本地交易哈希'
 })
-const isTransferReady = computed(
-  () =>
-    snapshot.value.account.address !== null &&
-    (snapshot.value.token.canTransfer || snapshot.value.transfer.status !== 'editing'),
-)
-const isTerminalTransfer = computed(() =>
-  ['broadcast-failed', 'failed', 'success', 'unknown'].includes(snapshot.value.transfer.status),
-)
 const recipientError = computed(() =>
   ['invalid-recipient', 'self-recipient', 'zero-recipient'].includes(
     snapshot.value.transfer.error?.kind ?? '',
@@ -58,25 +50,6 @@ const amountError = computed(() =>
     ? snapshot.value.transfer.error
     : null,
 )
-const transferUnavailableReason = computed(() => {
-  if (!snapshot.value.network.canUseChainActions) {
-    return 'Sepolia 网络当前不可用，请先恢复正确的链连接。'
-  }
-
-  if (!snapshot.value.account.address) {
-    return '缺少活动的专用测试账户，请先导入账户。'
-  }
-
-  if (!snapshot.value.token.address) {
-    return '尚未激活目标 Token，请先查询 Token。'
-  }
-
-  if (snapshot.value.token.balance === null) {
-    return '无法读取当前账户的 Token 余额，请先恢复余额查询。'
-  }
-
-  return '当前转账状态不可编辑。'
-})
 
 function useMaximumAmount() {
   if (snapshot.value.transfer.canSubmit && snapshot.value.token.balance !== null) {
@@ -98,7 +71,7 @@ async function submitTransfer() {
     amountDraft.value = ''
   }
 
-  if (isTerminalTransfer.value) {
+  if (snapshot.value.transfer.canStartNew) {
     amountDraft.value = ''
   }
 }
@@ -148,9 +121,13 @@ watch(
       使用当前活动 Token 完成模拟、本地签名、原始交易广播和一次 Sepolia 确认。
     </p>
 
-    <div v-if="!isTransferReady" class="transfer-placeholder" data-testid="transfer-unavailable">
+    <div
+      v-if="!snapshot.transfer.isFormVisible"
+      class="transfer-placeholder"
+      data-testid="transfer-unavailable"
+    >
       <strong>转账暂不可用</strong>
-      <span>{{ transferUnavailableReason }}</span>
+      <span>{{ snapshot.transfer.unavailableReason }}</span>
     </div>
 
     <form
@@ -269,7 +246,7 @@ watch(
 
       <div class="transfer-actions">
         <button
-          v-if="isTerminalTransfer"
+          v-if="snapshot.transfer.canStartNew"
           class="button button--secondary"
           name="new-transfer"
           type="button"
@@ -278,7 +255,7 @@ watch(
           新建转账
         </button>
         <button
-          v-if="snapshot.transfer.canQueryStatus || snapshot.transfer.status === 'querying'"
+          v-if="snapshot.transfer.isStatusQueryVisible"
           class="button button--secondary"
           name="query-transfer-status"
           type="button"

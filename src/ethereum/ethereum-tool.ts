@@ -143,11 +143,15 @@ interface TransferProblem {
 
 interface TransferSnapshot {
   readonly canQueryStatus: boolean
+  readonly canStartNew: boolean
   readonly canSubmit: boolean
   readonly error: TransferProblem | null
   readonly hash: Hex | null
+  readonly isFormVisible: boolean
+  readonly isStatusQueryVisible: boolean
   readonly recipient: `0x${string}` | null
   readonly status: TransferStatus
+  readonly unavailableReason: string | null
 }
 
 type NetworkState = Omit<
@@ -192,7 +196,15 @@ type SepoliaProbeResult =
 
 type AccountState = Omit<AccountSnapshot, 'canImport' | 'canLock' | 'canRefreshBalance'>
 type TokenState = Omit<TokenSnapshot, 'canInspect' | 'canTransfer'>
-type TransferState = Omit<TransferSnapshot, 'canQueryStatus' | 'canSubmit'>
+type TransferState = Omit<
+  TransferSnapshot,
+  | 'canQueryStatus'
+  | 'canStartNew'
+  | 'canSubmit'
+  | 'isFormVisible'
+  | 'isStatusQueryVisible'
+  | 'unavailableReason'
+>
 
 const INVALID_PRIVATE_KEY_PROBLEM = Object.freeze({
   kind: 'invalid-private-key' as const,
@@ -360,6 +372,15 @@ function isTransferInteractionLocked(status: TransferStatus): boolean {
   )
 }
 
+function canStartNewTransfer(status: TransferStatus): boolean {
+  return (
+    status === 'success' ||
+    status === 'failed' ||
+    status === 'unknown' ||
+    status === 'broadcast-failed'
+  )
+}
+
 function freezeSnapshot(
   network: NetworkState,
   account: AccountState,
@@ -372,6 +393,22 @@ function freezeSnapshot(
   const hasActiveAccount = account.address !== null
   const isTokenBusy = token.status === 'inspecting'
   const isTransferLocked = isTransferInteractionLocked(transfer.status)
+  const isFormVisible =
+    hasActiveAccount &&
+    ((token.status === 'compatible' && token.balance !== null) || transfer.status !== 'editing')
+  let unavailableReason: string | null = null
+
+  if (!isFormVisible) {
+    if (!canUseChainActions) {
+      unavailableReason = TRANSFER_NETWORK_UNAVAILABLE_PROBLEM.message
+    } else if (!hasActiveAccount) {
+      unavailableReason = TRANSFER_ACCOUNT_UNAVAILABLE_PROBLEM.message
+    } else if (!token.address) {
+      unavailableReason = TRANSFER_TOKEN_UNAVAILABLE_PROBLEM.message
+    } else if (token.balance === null) {
+      unavailableReason = TRANSFER_TOKEN_BALANCE_UNAVAILABLE_PROBLEM.message
+    }
+  }
 
   return Object.freeze({
     account: Object.freeze({
@@ -404,12 +441,20 @@ function freezeSnapshot(
       canQueryStatus:
         transfer.hash !== null &&
         (transfer.status === 'unknown' || transfer.status === 'broadcast-error'),
+      canStartNew: canStartNewTransfer(transfer.status),
       canSubmit:
         canUseChainActions &&
         hasActiveAccount &&
         token.status === 'compatible' &&
         token.balance !== null &&
         transfer.status === 'editing',
+      isFormVisible,
+      isStatusQueryVisible:
+        transfer.hash !== null &&
+        (transfer.status === 'unknown' ||
+          transfer.status === 'broadcast-error' ||
+          transfer.status === 'querying'),
+      unavailableReason,
     }),
   })
 }
@@ -1118,6 +1163,7 @@ export function createEthereumTool({ rpc }: { rpc: SepoliaRpcAdapter }): Ethereu
 
     let receipt: ObservedTransactionReceipt | null = null
     let receiptQueryFailed = false
+    const confirmationStartedAt = Date.now()
 
     try {
       receipt = await rpc.waitForTransactionReceipt(
@@ -1127,6 +1173,16 @@ export function createEthereumTool({ rpc }: { rpc: SepoliaRpcAdapter }): Ethereu
       )
     } catch {
       receiptQueryFailed = true
+      const remainingWaitMs = Math.max(
+        0,
+        TRANSFER_CONFIRMATION_TIMEOUT_MS - (Date.now() - confirmationStartedAt),
+      )
+
+      if (remainingWaitMs > 0) {
+        await new Promise<void>((resolve) => {
+          setTimeout(resolve, remainingWaitMs)
+        })
+      }
     }
 
     if (!receipt || receipt.confirmations < 1) {
@@ -1139,12 +1195,21 @@ export function createEthereumTool({ rpc }: { rpc: SepoliaRpcAdapter }): Ethereu
       return false
     }
 
+    return applyConfirmedTransferReceipt(receipt, account)
+  }
+
+  async function applyConfirmedTransferReceipt(
+    receipt: ObservedTransactionReceipt,
+    account: PrivateKeyAccount | undefined,
+  ) {
     if (receipt.status === 'reverted') {
       publishTransfer({ error: TRANSFER_EXECUTION_FAILED_PROBLEM, status: 'failed' })
       return false
     }
 
-    await refreshBalancesForAccount(account)
+    if (account) {
+      await refreshBalancesForAccount(account)
+    }
     publishTransfer({ error: null, status: 'success' })
     return true
   }
@@ -1187,25 +1252,11 @@ export function createEthereumTool({ rpc }: { rpc: SepoliaRpcAdapter }): Ethereu
 
     unresolvedSignedTransaction = undefined
 
-    if (receipt.status === 'reverted') {
-      publishTransfer({ error: TRANSFER_EXECUTION_FAILED_PROBLEM, status: 'failed' })
-      return false
-    }
-
-    if (localAccount) {
-      await refreshBalancesForAccount(localAccount)
-    }
-    publishTransfer({ error: null, status: 'success' })
-    return true
+    return applyConfirmedTransferReceipt(receipt, localAccount)
   }
 
   function startNewTransfer() {
-    if (
-      transferState.status !== 'success' &&
-      transferState.status !== 'failed' &&
-      transferState.status !== 'unknown' &&
-      transferState.status !== 'broadcast-failed'
-    ) {
+    if (!canStartNewTransfer(transferState.status)) {
       return
     }
 
