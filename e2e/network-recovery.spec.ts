@@ -10,14 +10,14 @@ const tokenInspectionAbi = parseAbi([
   'function symbol() view returns (string)',
 ])
 
-function readRequestId(route: Route): unknown {
+function readRpcBody(route: Route): Record<string, unknown> {
   const body: unknown = JSON.parse(route.request().postData() ?? '{}')
 
-  if (typeof body !== 'object' || body === null || !('id' in body)) {
-    return null
-  }
+  return typeof body === 'object' && body !== null ? body : {}
+}
 
-  return body.id
+function readRequestId(route: Route): unknown {
+  return readRpcBody(route).id ?? null
 }
 
 async function fulfillChainId(route: Route, chainId: number) {
@@ -36,23 +36,13 @@ async function fulfillRpcResult(route: Route, result: string) {
 }
 
 function readRpcMethod(route: Route): string | null {
-  const body: unknown = JSON.parse(route.request().postData() ?? '{}')
+  const method = readRpcBody(route).method
 
-  if (typeof body !== 'object' || body === null || !('method' in body)) {
-    return null
-  }
-
-  return typeof body.method === 'string' ? body.method : null
+  return typeof method === 'string' ? method : null
 }
 
 function readRpcCallData(route: Route): string | null {
-  const body: unknown = JSON.parse(route.request().postData() ?? '{}')
-
-  if (typeof body !== 'object' || body === null || !('params' in body)) {
-    return null
-  }
-
-  const params = body.params
+  const params = readRpcBody(route).params
 
   if (!Array.isArray(params) || typeof params[0] !== 'object' || params[0] === null) {
     return null

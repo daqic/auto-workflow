@@ -413,19 +413,37 @@ export function createEthereumTool({ rpc }: { rpc: SepoliaRpcAdapter }): Ethereu
     }
   }
 
+  function cancelAccountBoundTokenOperation() {
+    tokenOperationId += 1
+
+    if (tokenState.address && tokenState.decimals !== null) {
+      publishToken({ balance: null, error: null, status: 'compatible' })
+      return
+    }
+
+    if (tokenState.status === 'inspecting') {
+      publishToken({
+        address: null,
+        balance: null,
+        decimals: null,
+        error: null,
+        name: null,
+        status: 'idle',
+        symbol: null,
+      })
+    }
+  }
+
   async function importPrivateKey(privateKey: string) {
     const operationId = ++accountOperationId
     localAccount = undefined
-    tokenOperationId += 1
+    cancelAccountBoundTokenOperation()
     publishAccount({
       address: null,
       error: null,
       ethBalance: null,
       status: 'importing',
     })
-    if (tokenState.address && tokenState.decimals !== null) {
-      publishToken({ balance: null, error: null, status: 'compatible' })
-    }
 
     await Promise.resolve()
 
@@ -480,7 +498,7 @@ export function createEthereumTool({ rpc }: { rpc: SepoliaRpcAdapter }): Ethereu
 
   function lock() {
     accountOperationId += 1
-    tokenOperationId += 1
+    cancelAccountBoundTokenOperation()
     localAccount = undefined
     publishAccount({
       address: null,
@@ -488,9 +506,6 @@ export function createEthereumTool({ rpc }: { rpc: SepoliaRpcAdapter }): Ethereu
       ethBalance: null,
       status: 'locked',
     })
-    if (tokenState.address && tokenState.decimals !== null) {
-      publishToken({ balance: null, error: null, status: 'compatible' })
-    }
   }
 
   async function refreshBalance() {
@@ -498,8 +513,22 @@ export function createEthereumTool({ rpc }: { rpc: SepoliaRpcAdapter }): Ethereu
       return false
     }
 
+    const account = localAccount
     const operationId = ++accountOperationId
-    return refreshBalanceFor(localAccount, operationId)
+    const refreshed = await refreshBalanceFor(account, operationId)
+
+    if (
+      operationId === accountOperationId &&
+      localAccount === account &&
+      tokenState.address &&
+      tokenState.decimals !== null &&
+      (tokenState.status === 'compatible' || tokenState.error?.kind === 'balance-unavailable')
+    ) {
+      const tokenBalanceOperationId = ++tokenOperationId
+      await refreshTokenBalanceFor(account, tokenBalanceOperationId)
+    }
+
+    return refreshed
   }
 
   async function refreshTokenBalanceFor(

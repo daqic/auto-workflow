@@ -635,4 +635,65 @@ describe('EthereumTool Token Inspector', () => {
       symbol: 'DUSD',
     })
   })
+
+  it('returns to the empty state when lock cancels an in-progress public inspection', async () => {
+    let resolveBytecode: (() => void) | undefined
+    const rpc = createScriptedSepoliaRpcAdapter([{ chainId: 11_155_111 }], [], {
+      tokenDecimals: [{ decimals: 6 }],
+      tokenNames: [{ name: 'Demo USD' }],
+      tokenSymbols: [{ symbol: 'DUSD' }],
+    })
+    rpc.getBytecode = async () => {
+      await new Promise<void>((resolve) => {
+        resolveBytecode = resolve
+      })
+      return '0x6000'
+    }
+    const tool = createEthereumTool({ rpc })
+    await tool.network.initialize()
+
+    const inspection = tool.token.inspect('0x1111111111111111111111111111111111111111')
+    expect(tool.read().token.status).toBe('inspecting')
+
+    tool.account.lock()
+
+    expect(tool.read().token).toMatchObject({
+      address: null,
+      canInspect: true,
+      error: null,
+      status: 'idle',
+    })
+    resolveBytecode?.()
+    await inspection
+    expect(tool.read().token.status).toBe('idle')
+  })
+
+  it('refreshes the active Token balance with an explicit account balance refresh', async () => {
+    const tool = createEthereumTool({
+      rpc: createScriptedSepoliaRpcAdapter(
+        [{ chainId: 11_155_111 }],
+        [{ balance: 1_000_000_000_000_000_000n }, { balance: 2_000_000_000_000_000_000n }],
+        {
+          bytecodes: [{ bytecode: '0x6000' }],
+          tokenBalances: [{ balance: 25_000_000n }, { balance: 50_000_000n }],
+          tokenDecimals: [{ decimals: 6 }],
+          tokenNames: [{ name: 'Demo USD' }],
+          tokenSymbols: [{ symbol: 'DUSD' }],
+        },
+      ),
+    })
+    await tool.network.initialize()
+    await tool.account.importPrivateKey(generatePrivateKey())
+    await tool.token.inspect('0x1111111111111111111111111111111111111111')
+    expect(tool.read().token.balance).toBe('25')
+
+    await tool.account.refreshBalance()
+
+    expect(tool.read().account.ethBalance).toBe('2')
+    expect(tool.read().token).toMatchObject({
+      balance: '50',
+      canTransfer: true,
+      status: 'compatible',
+    })
+  })
 })
