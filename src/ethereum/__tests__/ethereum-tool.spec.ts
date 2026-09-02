@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { generatePrivateKey } from 'viem/accounts'
 
 import { DEFAULT_SEPOLIA_RPC_URL, createEthereumTool } from '@/ethereum/ethereum-tool'
 import { createScriptedSepoliaRpcAdapter } from '@/ethereum/testing/scripted-sepolia-rpc-adapter'
@@ -16,18 +17,16 @@ describe('EthereumTool network', () => {
     await tool.network.initialize()
     unsubscribe()
 
-    expect(tool.read()).toEqual({
-      network: {
-        activeRpcUrl: DEFAULT_SEPOLIA_RPC_URL,
-        canApplyRpcOverride: true,
-        canReconnect: true,
-        canUseChainActions: true,
-        chainId: 11_155_111,
-        connectionError: null,
-        isValidatingRpc: false,
-        rpcOverrideError: null,
-        status: 'connected',
-      },
+    expect(tool.read().network).toEqual({
+      activeRpcUrl: DEFAULT_SEPOLIA_RPC_URL,
+      canApplyRpcOverride: true,
+      canReconnect: true,
+      canUseChainActions: true,
+      chainId: 11_155_111,
+      connectionError: null,
+      isValidatingRpc: false,
+      rpcOverrideError: null,
+      status: 'connected',
     })
     expect(observedStatuses).toEqual(['connecting', 'connected'])
     expect(Object.isFrozen(tool.read())).toBe(true)
@@ -230,6 +229,158 @@ describe('EthereumTool network', () => {
       activeRpcUrl: candidateRpcUrl,
       canUseChainActions: true,
       connectionError: null,
+      status: 'connected',
+    })
+  })
+})
+
+describe('EthereumTool account session', () => {
+  it('imports a runtime-generated private key and publishes only its public account state', async () => {
+    const privateKey = generatePrivateKey()
+    const rpc = createScriptedSepoliaRpcAdapter({
+      chainId: [{ chainId: 11_155_111 }],
+      ethBalance: [{ balance: 1_500_000_000_000_000_000n }],
+    })
+    const tool = createEthereumTool({ rpc })
+    const observedStatuses: string[] = []
+    const unsubscribe = tool.subscribe(({ account }) => observedStatuses.push(account.status))
+
+    await tool.network.initialize()
+    const imported = await tool.account.importPrivateKey(privateKey)
+    unsubscribe()
+
+    expect(imported).toBe(true)
+    expect(tool.read().account).toMatchObject({
+      address: expect.stringMatching(/^0x[0-9A-Fa-f]{40}$/),
+      canLock: true,
+      canRefreshBalance: true,
+      ethBalance: '1.5',
+      error: null,
+      status: 'connected',
+    })
+    expect(JSON.stringify(tool.read())).not.toContain(privateKey)
+    expect(Object.isFrozen(tool.read().account)).toBe(true)
+    expect(observedStatuses).toContain('importing')
+    expect(observedStatuses).toContain('loading-balance')
+    expect(observedStatuses[observedStatuses.length - 1]).toBe('connected')
+  })
+
+  it.each([
+    ['a mnemonic phrase is not supported', 'test test test test test test'],
+    ['a key without the 0x prefix is not supported', generatePrivateKey().slice(2)],
+    ['a keystore object is not supported', '{"crypto":{}}'],
+  ])('rejects %s without retaining or echoing the input', async (_case, invalidInput) => {
+    const tool = createEthereumTool({
+      rpc: createScriptedSepoliaRpcAdapter([{ chainId: 11_155_111 }]),
+    })
+    await tool.network.initialize()
+
+    const imported = await tool.account.importPrivateKey(invalidInput)
+
+    expect(imported).toBe(false)
+    expect(tool.read().account).toMatchObject({
+      address: null,
+      canLock: false,
+      error: {
+        kind: 'invalid-private-key',
+        message: '私钥格式无效。仅支持 0x 开头的 64 位十六进制专用测试私钥。',
+      },
+      ethBalance: null,
+      status: 'import-error',
+    })
+    expect(JSON.stringify(tool.read())).not.toContain(invalidInput)
+  })
+
+  it('replaces the active account and clears the prior account-bound balance', async () => {
+    const firstPrivateKey = generatePrivateKey()
+    const secondPrivateKey = generatePrivateKey()
+    const tool = createEthereumTool({
+      rpc: createScriptedSepoliaRpcAdapter({
+        chainId: [{ chainId: 11_155_111 }],
+        ethBalance: [
+          { balance: 1_000_000_000_000_000_000n },
+          { balance: 2_000_000_000_000_000_000n },
+        ],
+      }),
+    })
+    await tool.network.initialize()
+    await tool.account.importPrivateKey(firstPrivateKey)
+    const firstAccount = tool.read().account
+
+    await tool.account.importPrivateKey(secondPrivateKey)
+
+    expect(tool.read().account.address).not.toBe(firstAccount.address)
+    expect(tool.read().account).toMatchObject({
+      ethBalance: '2',
+      error: null,
+      status: 'connected',
+    })
+    expect(firstAccount.ethBalance).toBe('1')
+  })
+
+  it('surfaces a sanitized balance error and recovers through manual refresh', async () => {
+    const privateKey = generatePrivateKey()
+    const tool = createEthereumTool({
+      rpc: createScriptedSepoliaRpcAdapter({
+        chainId: [{ chainId: 11_155_111 }],
+        ethBalance: [
+          { error: new Error(`failed to read ${privateKey}`) },
+          { balance: 3_250_000_000_000_000_000n },
+        ],
+      }),
+    })
+    await tool.network.initialize()
+
+    const imported = await tool.account.importPrivateKey(privateKey)
+
+    expect(imported).toBe(true)
+    expect(tool.read().account).toMatchObject({
+      address: expect.stringMatching(/^0x/),
+      canRefreshBalance: true,
+      error: {
+        kind: 'balance-unavailable',
+        message: '无法读取该账户的 Sepolia ETH 余额，请手动刷新。',
+      },
+      ethBalance: null,
+      status: 'balance-error',
+    })
+    expect(JSON.stringify(tool.read())).not.toContain(privateKey)
+
+    const refreshed = await tool.account.refreshBalance()
+
+    expect(refreshed).toBe(true)
+    expect(tool.read().account).toMatchObject({
+      ethBalance: '3.25',
+      error: null,
+      status: 'connected',
+    })
+  })
+
+  it('locks the account session without changing the valid RPC connection', async () => {
+    const tool = createEthereumTool({
+      rpc: createScriptedSepoliaRpcAdapter({
+        chainId: [{ chainId: 11_155_111 }],
+        ethBalance: [{ balance: 500_000_000_000_000_000n }],
+      }),
+    })
+    await tool.network.initialize()
+    await tool.account.importPrivateKey(generatePrivateKey())
+
+    tool.account.lock()
+
+    expect(tool.read().account).toEqual({
+      address: null,
+      canImport: true,
+      canLock: false,
+      canRefreshBalance: false,
+      error: null,
+      ethBalance: null,
+      status: 'locked',
+    })
+    expect(tool.read().network).toMatchObject({
+      activeRpcUrl: DEFAULT_SEPOLIA_RPC_URL,
+      canUseChainActions: true,
+      chainId: 11_155_111,
       status: 'connected',
     })
   })
