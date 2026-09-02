@@ -701,8 +701,10 @@ describe('EthereumTool Token Inspector', () => {
 })
 
 describe('EthereumTool Token Transfer', () => {
-  it('rejects the active account as the recipient before signing', async () => {
-    const privateKey = generatePrivateKey()
+  const tokenAddress = '0x1111111111111111111111111111111111111111'
+  const recipient = '0x2222222222222222222222222222222222222222'
+
+  async function createTransferReadyTool() {
     const tool = createEthereumTool({
       rpc: createScriptedSepoliaRpcAdapter(
         [{ chainId: 11_155_111 }],
@@ -717,8 +719,13 @@ describe('EthereumTool Token Transfer', () => {
       ),
     })
     await tool.network.initialize()
-    await tool.account.importPrivateKey(privateKey)
-    await tool.token.inspect('0x1111111111111111111111111111111111111111')
+    await tool.account.importPrivateKey(generatePrivateKey())
+    await tool.token.inspect(tokenAddress)
+    return tool
+  }
+
+  it('rejects the active account as the recipient before signing', async () => {
+    const tool = await createTransferReadyTool()
 
     const submitted = await tool.transfer.submit({
       amount: '1',
@@ -736,26 +743,11 @@ describe('EthereumTool Token Transfer', () => {
   })
 
   it('rejects an amount with more precision than the active Token supports', async () => {
-    const tool = createEthereumTool({
-      rpc: createScriptedSepoliaRpcAdapter(
-        [{ chainId: 11_155_111 }],
-        [{ balance: 1_000_000_000_000_000_000n }],
-        {
-          bytecodes: [{ bytecode: '0x6000' }],
-          tokenBalances: [{ balance: 1_000_000n }],
-          tokenDecimals: [{ decimals: 6 }],
-          tokenNames: [{ name: 'Demo USD' }],
-          tokenSymbols: [{ symbol: 'DUSD' }],
-        },
-      ),
-    })
-    await tool.network.initialize()
-    await tool.account.importPrivateKey(generatePrivateKey())
-    await tool.token.inspect('0x1111111111111111111111111111111111111111')
+    const tool = await createTransferReadyTool()
 
     const submitted = await tool.transfer.submit({
       amount: '0.0000001',
-      recipient: '0x2222222222222222222222222222222222222222',
+      recipient,
     })
 
     expect(submitted).toBe(false)
@@ -774,27 +766,12 @@ describe('EthereumTool Token Transfer', () => {
     ['scientific notation', '1e3'],
     ['more than the readable balance', '1.000001'],
   ])('rejects %s as the transfer amount', async (_case, amount) => {
-    const tool = createEthereumTool({
-      rpc: createScriptedSepoliaRpcAdapter(
-        [{ chainId: 11_155_111 }],
-        [{ balance: 1_000_000_000_000_000_000n }],
-        {
-          bytecodes: [{ bytecode: '0x6000' }],
-          tokenBalances: [{ balance: 1_000_000n }],
-          tokenDecimals: [{ decimals: 6 }],
-          tokenNames: [{ name: 'Demo USD' }],
-          tokenSymbols: [{ symbol: 'DUSD' }],
-        },
-      ),
-    })
-    await tool.network.initialize()
-    await tool.account.importPrivateKey(generatePrivateKey())
-    await tool.token.inspect('0x1111111111111111111111111111111111111111')
+    const tool = await createTransferReadyTool()
 
     expect(
       await tool.transfer.submit({
         amount,
-        recipient: '0x2222222222222222222222222222222222222222',
+        recipient,
       }),
     ).toBe(false)
     expect(tool.read().transfer.status).toBe('editing')
@@ -805,22 +782,7 @@ describe('EthereumTool Token Transfer', () => {
     ['a malformed address', 'not-an-address', 'invalid-recipient'],
     ['the zero address', '0x0000000000000000000000000000000000000000', 'zero-recipient'],
   ])('rejects %s before transfer simulation', async (_case, recipient, expectedKind) => {
-    const tool = createEthereumTool({
-      rpc: createScriptedSepoliaRpcAdapter(
-        [{ chainId: 11_155_111 }],
-        [{ balance: 1_000_000_000_000_000_000n }],
-        {
-          bytecodes: [{ bytecode: '0x6000' }],
-          tokenBalances: [{ balance: 1_000_000n }],
-          tokenDecimals: [{ decimals: 6 }],
-          tokenNames: [{ name: 'Demo USD' }],
-          tokenSymbols: [{ symbol: 'DUSD' }],
-        },
-      ),
-    })
-    await tool.network.initialize()
-    await tool.account.importPrivateKey(generatePrivateKey())
-    await tool.token.inspect('0x1111111111111111111111111111111111111111')
+    const tool = await createTransferReadyTool()
 
     expect(await tool.transfer.submit({ amount: '1', recipient })).toBe(false)
     expect(tool.read().transfer).toMatchObject({
@@ -862,7 +824,6 @@ describe('EthereumTool Token Transfer', () => {
   })
 
   it('stops before signing when the prepared maximum fee exceeds the ETH balance', async () => {
-    const tokenAddress = '0x1111111111111111111111111111111111111111'
     const preparedTransaction: PreparedTokenTransfer = {
       chainId: 11_155_111,
       data: '0xa9059cbb',
@@ -902,10 +863,61 @@ describe('EthereumTool Token Transfer', () => {
     })
   })
 
+  it('keeps an ambiguous broadcast attached to its original hash and blocks replacement intents', async () => {
+    const preparedTransaction: PreparedTokenTransfer = {
+      chainId: 11_155_111,
+      data: '0xa9059cbb',
+      gas: 50_000n,
+      maxFeePerGas: 2_000_000_000n,
+      maxPriorityFeePerGas: 1_000_000_000n,
+      nonce: 0,
+      to: tokenAddress,
+      type: 'eip1559',
+      value: 0n,
+    }
+    const rpc = {
+      ...createScriptedSepoliaRpcAdapter(
+        [{ chainId: 11_155_111 }],
+        [{ balance: 1_000_000_000_000_000_000n }],
+        {
+          bytecodes: [{ bytecode: '0x6000' }],
+          preparedTransfers: [{ transaction: preparedTransaction }],
+          tokenBalances: [{ balance: 1_000_000n }],
+          tokenDecimals: [{ decimals: 6 }],
+          tokenNames: [{ name: 'Demo USD' }],
+          tokenSymbols: [{ symbol: 'DUSD' }],
+          transferSimulations: [{ result: true }],
+        },
+      ),
+      async sendRawTransaction() {
+        throw new Error('ambiguous provider failure')
+      },
+    }
+    const tool = createEthereumTool({ rpc })
+    await tool.network.initialize()
+    await tool.account.importPrivateKey(generatePrivateKey())
+    await tool.token.inspect(tokenAddress)
+    const accountAddress = tool.read().account.address
+
+    expect(await tool.transfer.submit({ amount: '1', recipient })).toBe(false)
+    expect(tool.read().transfer).toMatchObject({
+      canSubmit: false,
+      error: {
+        kind: 'broadcast-failed',
+        message: expect.stringContaining('交易可能已到达网络'),
+      },
+      hash: expect.stringMatching(/^0x[0-9a-f]{64}$/),
+      status: 'broadcast-error',
+    })
+
+    expect(await tool.token.inspect('0x3333333333333333333333333333333333333333')).toBe(false)
+    tool.account.lock()
+    expect(tool.read().account.address).toBe(accountAddress)
+    expect(tool.read().transfer.status).toBe('broadcast-error')
+  })
+
   it('submits the exact minimum-unit amount and reports success only after confirmation', async () => {
     const privateKey = generatePrivateKey()
-    const tokenAddress = '0x1111111111111111111111111111111111111111'
-    const recipient = '0x2222222222222222222222222222222222222222'
     const transferCalls: string[] = []
     const preparedTransaction: PreparedTokenTransfer = {
       chainId: 11_155_111,
@@ -951,8 +963,8 @@ describe('EthereumTool Token Transfer', () => {
     await tool.network.initialize()
     await tool.account.importPrivateKey(privateKey)
     await tool.token.inspect(tokenAddress)
-    const observedStatuses: string[] = []
-    const unsubscribe = tool.subscribe(({ transfer }) => observedStatuses.push(transfer.status))
+    const observedSnapshots: ReturnType<typeof tool.read>[] = []
+    const unsubscribe = tool.subscribe((snapshot) => observedSnapshots.push(snapshot))
 
     const submitted = await tool.transfer.submit({ amount: '1.2345', recipient })
     unsubscribe()
@@ -960,8 +972,19 @@ describe('EthereumTool Token Transfer', () => {
     expect(submitted).toBe(true)
     expect(transferCalls).toEqual(['simulate:1234500', 'prepare:1234500', 'send', 'receipt'])
     expect(
-      observedStatuses.filter((status, index) => status !== observedStatuses[index - 1]),
+      observedSnapshots
+        .map(({ transfer }) => transfer.status)
+        .filter((status, index, statuses) => status !== statuses[index - 1]),
     ).toEqual(['checking', 'signing', 'submitting', 'confirming', 'success'])
+    expect(observedSnapshots.find(({ transfer }) => transfer.status === 'checking')).toMatchObject({
+      account: { address: expect.stringMatching(/^0x/), ethBalance: '1' },
+      network: { chainId: 11_155_111, status: 'connected' },
+      token: { address: tokenAddress, balance: '1.5', canTransfer: true },
+    })
+    expect(observedSnapshots.find(({ transfer }) => transfer.status === 'success')).toMatchObject({
+      account: { ethBalance: '0.75' },
+      token: { balance: '0.2655' },
+    })
     expect(tool.read().transfer).toMatchObject({
       canSubmit: false,
       error: null,
@@ -974,6 +997,13 @@ describe('EthereumTool Token Transfer', () => {
 
     expect(await tool.transfer.submit({ amount: '0.1', recipient })).toBe(false)
     expect(transferCalls).toHaveLength(4)
+
+    expect(await tool.token.inspect('0x3333333333333333333333333333333333333333')).toBe(false)
+    expect(tool.read().transfer).toMatchObject({
+      hash: expect.stringMatching(/^0x[0-9a-f]{64}$/),
+      recipient,
+      status: 'success',
+    })
 
     tool.transfer.startNew()
     expect(tool.read().transfer).toMatchObject({

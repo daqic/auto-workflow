@@ -267,7 +267,7 @@ const TRANSFER_SIGNING_FAILED_PROBLEM = Object.freeze({
 
 const TRANSFER_BROADCAST_FAILED_PROBLEM = Object.freeze({
   kind: 'broadcast-failed' as const,
-  message: 'RPC 未明确接受已签名交易，不能创建或签名另一笔转账。',
+  message: 'RPC 未明确接受已签名交易；交易可能已到达网络，不能创建或签名另一笔转账。',
 })
 
 const TRANSFER_CONFIRMATION_FAILED_PROBLEM = Object.freeze({
@@ -285,6 +285,16 @@ function calculateMaximumTransactionCost(transaction: TransactionSerializable): 
   return transaction.gas * gasPrice + (transaction.value ?? 0n)
 }
 
+function isTransferInteractionLocked(status: TransferStatus): boolean {
+  return (
+    status === 'checking' ||
+    status === 'signing' ||
+    status === 'submitting' ||
+    status === 'confirming' ||
+    status === 'broadcast-error'
+  )
+}
+
 function freezeSnapshot(
   network: NetworkState,
   account: AccountState,
@@ -296,32 +306,29 @@ function freezeSnapshot(
   const isAccountBusy = account.status === 'importing' || account.status === 'loading-balance'
   const hasActiveAccount = account.address !== null
   const isTokenBusy = token.status === 'inspecting'
-  const isTransferInFlight =
-    transfer.status === 'checking' ||
-    transfer.status === 'signing' ||
-    transfer.status === 'submitting' ||
-    transfer.status === 'confirming'
+  const isTransferLocked = isTransferInteractionLocked(transfer.status)
 
   return Object.freeze({
     account: Object.freeze({
       ...account,
-      canImport: canUseChainActions && !isAccountBusy && !isTransferInFlight,
-      canLock: hasActiveAccount && !isTransferInFlight,
+      canImport: canUseChainActions && !isAccountBusy && !isTransferLocked,
+      canLock: hasActiveAccount && !isTransferLocked,
       canRefreshBalance:
-        canUseChainActions && hasActiveAccount && !isAccountBusy && !isTransferInFlight,
+        canUseChainActions && hasActiveAccount && !isAccountBusy && !isTransferLocked,
     }),
     network: Object.freeze({
       ...network,
-      canApplyRpcOverride: !isNetworkBusy && !isTransferInFlight,
+      canApplyRpcOverride: !isNetworkBusy && !isTransferLocked,
       canReconnect:
         !isNetworkBusy &&
-        !isTransferInFlight &&
+        !isTransferLocked &&
         (network.status === 'connected' || network.status === 'error'),
       canUseChainActions,
     }),
     token: Object.freeze({
       ...token,
-      canInspect: canUseChainActions && !isTokenBusy && !isTransferInFlight,
+      canInspect:
+        canUseChainActions && !isTokenBusy && !isTransferLocked && transfer.status !== 'success',
       canTransfer:
         canUseChainActions &&
         hasActiveAccount &&
@@ -422,7 +429,11 @@ export function createEthereumTool({ rpc }: { rpc: SepoliaRpcAdapter }): Ethereu
   }
 
   async function initialize() {
-    if (networkState.status === 'connecting' || networkState.isValidatingRpc) {
+    if (
+      networkState.status === 'connecting' ||
+      networkState.isValidatingRpc ||
+      isTransferInteractionLocked(transferState.status)
+    ) {
       return
     }
 
@@ -460,7 +471,11 @@ export function createEthereumTool({ rpc }: { rpc: SepoliaRpcAdapter }): Ethereu
   }
 
   async function applyRpcOverride(candidateRpcUrl: string) {
-    if (networkState.status === 'connecting' || networkState.isValidatingRpc) {
+    if (
+      networkState.status === 'connecting' ||
+      networkState.isValidatingRpc ||
+      isTransferInteractionLocked(transferState.status)
+    ) {
       return false
     }
 
@@ -530,12 +545,12 @@ export function createEthereumTool({ rpc }: { rpc: SepoliaRpcAdapter }): Ethereu
         return false
       }
 
+      ethBalanceMinimumUnits = balance
       publishAccount({
         error: null,
         ethBalance: formatEther(balance),
         status: 'connected',
       })
-      ethBalanceMinimumUnits = balance
       return true
     } catch {
       if (operationId !== accountOperationId || localAccount !== account) {
@@ -575,6 +590,10 @@ export function createEthereumTool({ rpc }: { rpc: SepoliaRpcAdapter }): Ethereu
   }
 
   async function importPrivateKey(privateKey: string) {
+    if (isTransferInteractionLocked(transferState.status)) {
+      return false
+    }
+
     const operationId = ++accountOperationId
     localAccount = undefined
     ethBalanceMinimumUnits = null
@@ -639,6 +658,10 @@ export function createEthereumTool({ rpc }: { rpc: SepoliaRpcAdapter }): Ethereu
   }
 
   function lock() {
+    if (isTransferInteractionLocked(transferState.status)) {
+      return
+    }
+
     accountOperationId += 1
     cancelAccountBoundTokenOperation()
     localAccount = undefined
@@ -652,12 +675,7 @@ export function createEthereumTool({ rpc }: { rpc: SepoliaRpcAdapter }): Ethereu
     })
   }
 
-  async function refreshBalance() {
-    if (!localAccount || !snapshot.account.canRefreshBalance) {
-      return false
-    }
-
-    const account = localAccount
+  async function refreshBalancesForAccount(account: PrivateKeyAccount) {
     const operationId = ++accountOperationId
     const refreshed = await refreshBalanceFor(account, operationId)
 
@@ -673,6 +691,14 @@ export function createEthereumTool({ rpc }: { rpc: SepoliaRpcAdapter }): Ethereu
     }
 
     return refreshed
+  }
+
+  async function refreshBalance() {
+    if (!localAccount || !snapshot.account.canRefreshBalance) {
+      return false
+    }
+
+    return refreshBalancesForAccount(localAccount)
   }
 
   async function refreshTokenBalanceFor(
@@ -694,12 +720,12 @@ export function createEthereumTool({ rpc }: { rpc: SepoliaRpcAdapter }): Ethereu
         return false
       }
 
+      tokenBalanceMinimumUnits = balance
       publishToken({
         balance: formatUnits(balance, decimals),
         error: null,
         status: 'compatible',
       })
-      tokenBalanceMinimumUnits = balance
       return true
     } catch {
       if (operationId !== tokenOperationId || localAccount !== account) {
@@ -717,6 +743,10 @@ export function createEthereumTool({ rpc }: { rpc: SepoliaRpcAdapter }): Ethereu
   }
 
   async function inspectToken(tokenAddress: string) {
+    if (transferState.status !== 'editing') {
+      return false
+    }
+
     const operationId = ++tokenOperationId
     tokenBalanceMinimumUnits = null
     publishTransfer({ error: null, hash: null, recipient: null, status: 'editing' })
@@ -985,8 +1015,8 @@ export function createEthereumTool({ rpc }: { rpc: SepoliaRpcAdapter }): Ethereu
       return false
     }
 
+    await refreshBalancesForAccount(account)
     publishTransfer({ error: null, status: 'success' })
-    await refreshBalance()
     return true
   }
 
