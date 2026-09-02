@@ -27,6 +27,9 @@ describe('EthereumToolView network status', () => {
     expect(wrapper.get('h1').text()).toBe('Ethereum Sepolia 工具 Demo')
     expect(wrapper.get('[data-testid="network-status"]').text()).toContain('已连接')
     expect(wrapper.text()).toContain('https://ethereum-sepolia-rpc.publicnode.com')
+    expect(wrapper.get('[data-testid="transfer-unavailable"]').text()).toContain(
+      '缺少活动的专用测试账户',
+    )
   })
 
   it('keeps recovery controls available after startup fails and reconnects on demand', async () => {
@@ -48,6 +51,9 @@ describe('EthereumToolView network status', () => {
 
     expect(wrapper.get('[role="alert"]').text()).toContain('链上操作暂不可用')
     expect(wrapper.get('[data-testid="network-status"]').text()).toContain('连接失败')
+    expect(wrapper.get('[data-testid="transfer-unavailable"]').text()).toContain(
+      'Sepolia 网络当前不可用',
+    )
 
     await wrapper.get('button[name="reconnect"]').trigger('click')
     await flushPromises()

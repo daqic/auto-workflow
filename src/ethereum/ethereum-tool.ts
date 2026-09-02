@@ -37,6 +37,82 @@ type TransferStatus =
   | 'broadcast-failed'
   | 'broadcast-error'
 
+interface TransferStatusCapabilities {
+  readonly canQueryStatus: boolean
+  readonly canStartNew: boolean
+  readonly interactionLocked: boolean
+  readonly statusQueryVisible: boolean
+}
+
+const TRANSFER_STATUS_CAPABILITIES: Record<TransferStatus, TransferStatusCapabilities> = {
+  'broadcast-error': {
+    canQueryStatus: true,
+    canStartNew: false,
+    interactionLocked: true,
+    statusQueryVisible: true,
+  },
+  'broadcast-failed': {
+    canQueryStatus: false,
+    canStartNew: true,
+    interactionLocked: false,
+    statusQueryVisible: false,
+  },
+  checking: {
+    canQueryStatus: false,
+    canStartNew: false,
+    interactionLocked: true,
+    statusQueryVisible: false,
+  },
+  confirming: {
+    canQueryStatus: false,
+    canStartNew: false,
+    interactionLocked: true,
+    statusQueryVisible: false,
+  },
+  editing: {
+    canQueryStatus: false,
+    canStartNew: false,
+    interactionLocked: false,
+    statusQueryVisible: false,
+  },
+  failed: {
+    canQueryStatus: false,
+    canStartNew: true,
+    interactionLocked: false,
+    statusQueryVisible: false,
+  },
+  querying: {
+    canQueryStatus: false,
+    canStartNew: false,
+    interactionLocked: true,
+    statusQueryVisible: true,
+  },
+  signing: {
+    canQueryStatus: false,
+    canStartNew: false,
+    interactionLocked: true,
+    statusQueryVisible: false,
+  },
+  submitting: {
+    canQueryStatus: false,
+    canStartNew: false,
+    interactionLocked: true,
+    statusQueryVisible: false,
+  },
+  success: {
+    canQueryStatus: false,
+    canStartNew: true,
+    interactionLocked: false,
+    statusQueryVisible: false,
+  },
+  unknown: {
+    canQueryStatus: true,
+    canStartNew: true,
+    interactionLocked: false,
+    statusQueryVisible: true,
+  },
+}
+
 interface NetworkProblem {
   readonly kind: 'unreachable' | 'wrong-chain' | 'invalid-url'
   readonly message: string
@@ -362,23 +438,7 @@ function calculateMaximumTransactionCost(transaction: TransactionSerializable): 
 }
 
 function isTransferInteractionLocked(status: TransferStatus): boolean {
-  return (
-    status === 'checking' ||
-    status === 'signing' ||
-    status === 'submitting' ||
-    status === 'confirming' ||
-    status === 'querying' ||
-    status === 'broadcast-error'
-  )
-}
-
-function canStartNewTransfer(status: TransferStatus): boolean {
-  return (
-    status === 'success' ||
-    status === 'failed' ||
-    status === 'unknown' ||
-    status === 'broadcast-failed'
-  )
+  return TRANSFER_STATUS_CAPABILITIES[status].interactionLocked
 }
 
 function freezeSnapshot(
@@ -393,6 +453,7 @@ function freezeSnapshot(
   const hasActiveAccount = account.address !== null
   const isTokenBusy = token.status === 'inspecting'
   const isTransferLocked = isTransferInteractionLocked(transfer.status)
+  const transferCapabilities = TRANSFER_STATUS_CAPABILITIES[transfer.status]
   const isFormVisible =
     hasActiveAccount &&
     ((token.status === 'compatible' && token.balance !== null) || transfer.status !== 'editing')
@@ -438,10 +499,8 @@ function freezeSnapshot(
     }),
     transfer: Object.freeze({
       ...transfer,
-      canQueryStatus:
-        transfer.hash !== null &&
-        (transfer.status === 'unknown' || transfer.status === 'broadcast-error'),
-      canStartNew: canStartNewTransfer(transfer.status),
+      canQueryStatus: transfer.hash !== null && transferCapabilities.canQueryStatus,
+      canStartNew: transferCapabilities.canStartNew,
       canSubmit:
         canUseChainActions &&
         hasActiveAccount &&
@@ -449,11 +508,7 @@ function freezeSnapshot(
         token.balance !== null &&
         transfer.status === 'editing',
       isFormVisible,
-      isStatusQueryVisible:
-        transfer.hash !== null &&
-        (transfer.status === 'unknown' ||
-          transfer.status === 'broadcast-error' ||
-          transfer.status === 'querying'),
+      isStatusQueryVisible: transfer.hash !== null && transferCapabilities.statusQueryVisible,
       unavailableReason,
     }),
   })
@@ -1218,10 +1273,7 @@ export function createEthereumTool({ rpc }: { rpc: SepoliaRpcAdapter }): Ethereu
     const previousStatus = transferState.status
     const transactionHash = transferState.hash
 
-    if (
-      !transactionHash ||
-      (previousStatus !== 'unknown' && previousStatus !== 'broadcast-error')
-    ) {
+    if (!transactionHash || !TRANSFER_STATUS_CAPABILITIES[previousStatus].canQueryStatus) {
       return false
     }
 
@@ -1256,7 +1308,7 @@ export function createEthereumTool({ rpc }: { rpc: SepoliaRpcAdapter }): Ethereu
   }
 
   function startNewTransfer() {
-    if (!canStartNewTransfer(transferState.status)) {
+    if (!TRANSFER_STATUS_CAPABILITIES[transferState.status].canStartNew) {
       return
     }
 

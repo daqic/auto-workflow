@@ -707,8 +707,19 @@ describe('EthereumTool Token Inspector', () => {
 describe('EthereumTool Token Transfer', () => {
   const tokenAddress = '0x1111111111111111111111111111111111111111'
   const recipient = '0x2222222222222222222222222222222222222222'
+  const preparedTransaction: PreparedTokenTransfer = {
+    chainId: 11_155_111,
+    data: '0xa9059cbb',
+    gas: 50_000n,
+    maxFeePerGas: 2_000_000_000n,
+    maxPriorityFeePerGas: 1_000_000_000n,
+    nonce: 0,
+    to: tokenAddress,
+    type: 'eip1559',
+    value: 0n,
+  }
 
-  function auditPreSigningSideEffects(rpc: SepoliaRpcAdapter) {
+  function auditTransferRpcStages(rpc: SepoliaRpcAdapter) {
     const stages: string[] = []
     const auditedRpc: SepoliaRpcAdapter = {
       ...rpc,
@@ -726,7 +737,7 @@ describe('EthereumTool Token Transfer', () => {
   }
 
   async function createTransferReadyTool() {
-    const audit = auditPreSigningSideEffects(
+    const audit = auditTransferRpcStages(
       createScriptedSepoliaRpcAdapter(
         [{ chainId: 11_155_111 }],
         [{ balance: 1_000_000_000_000_000_000n }],
@@ -908,7 +919,7 @@ describe('EthereumTool Token Transfer', () => {
   })
 
   it('reports each missing transfer prerequisite through the public snapshot', async () => {
-    const wrongChainAudit = auditPreSigningSideEffects(
+    const wrongChainAudit = auditTransferRpcStages(
       createScriptedSepoliaRpcAdapter([{ chainId: 1 }]),
     )
     const wrongChainTool = createEthereumTool({
@@ -916,10 +927,14 @@ describe('EthereumTool Token Transfer', () => {
     })
     await wrongChainTool.network.initialize()
     expect(await wrongChainTool.transfer.submit({ amount: '1', recipient })).toBe(false)
-    expect(wrongChainTool.read().transfer.error?.kind).toBe('network-unavailable')
+    expect(wrongChainTool.read().transfer).toMatchObject({
+      error: { kind: 'network-unavailable' },
+      isFormVisible: false,
+      unavailableReason: 'Sepolia 网络当前不可用，请先恢复正确的链连接。',
+    })
     expect(wrongChainAudit.stages).toEqual([])
 
-    const missingAccountAudit = auditPreSigningSideEffects(
+    const missingAccountAudit = auditTransferRpcStages(
       createScriptedSepoliaRpcAdapter([{ chainId: 11_155_111 }]),
     )
     const missingAccountTool = createEthereumTool({
@@ -927,10 +942,14 @@ describe('EthereumTool Token Transfer', () => {
     })
     await missingAccountTool.network.initialize()
     expect(await missingAccountTool.transfer.submit({ amount: '1', recipient })).toBe(false)
-    expect(missingAccountTool.read().transfer.error?.kind).toBe('account-unavailable')
+    expect(missingAccountTool.read().transfer).toMatchObject({
+      error: { kind: 'account-unavailable' },
+      isFormVisible: false,
+      unavailableReason: '缺少活动的专用测试账户，请先导入账户。',
+    })
     expect(missingAccountAudit.stages).toEqual([])
 
-    const missingTokenAudit = auditPreSigningSideEffects(
+    const missingTokenAudit = auditTransferRpcStages(
       createScriptedSepoliaRpcAdapter(
         [{ chainId: 11_155_111 }],
         [{ balance: 1_000_000_000_000_000_000n }],
@@ -942,10 +961,14 @@ describe('EthereumTool Token Transfer', () => {
     await missingTokenTool.network.initialize()
     await missingTokenTool.account.importPrivateKey(generatePrivateKey())
     expect(await missingTokenTool.transfer.submit({ amount: '1', recipient })).toBe(false)
-    expect(missingTokenTool.read().transfer.error?.kind).toBe('token-unavailable')
+    expect(missingTokenTool.read().transfer).toMatchObject({
+      error: { kind: 'token-unavailable' },
+      isFormVisible: false,
+      unavailableReason: '尚未激活可转账的目标 Token，请先查询 Token。',
+    })
     expect(missingTokenAudit.stages).toEqual([])
 
-    const missingTokenBalanceAudit = auditPreSigningSideEffects(
+    const missingTokenBalanceAudit = auditTransferRpcStages(
       createScriptedSepoliaRpcAdapter(
         [{ chainId: 11_155_111 }],
         [{ balance: 1_000_000_000_000_000_000n }],
@@ -968,24 +991,15 @@ describe('EthereumTool Token Transfer', () => {
     expect(missingTokenBalanceTool.read().transfer).toMatchObject({
       error: { kind: 'token-balance-unavailable' },
       hash: null,
+      isFormVisible: false,
       status: 'editing',
+      unavailableReason: '无法读取当前账户的 Token 余额，不能进行转账预检查。',
     })
     expect(missingTokenBalanceAudit.stages).toEqual([])
   })
 
   it('stops before signing when the prepared maximum fee exceeds the ETH balance', async () => {
-    const preparedTransaction: PreparedTokenTransfer = {
-      chainId: 11_155_111,
-      data: '0xa9059cbb',
-      gas: 50_000n,
-      maxFeePerGas: 2_000_000_000n,
-      maxPriorityFeePerGas: 1_000_000_000n,
-      nonce: 0,
-      to: tokenAddress,
-      type: 'eip1559',
-      value: 0n,
-    }
-    const audit = auditPreSigningSideEffects(
+    const audit = auditTransferRpcStages(
       createScriptedSepoliaRpcAdapter([{ chainId: 11_155_111 }], [{ balance: 1n }], {
         bytecodes: [{ bytecode: '0x6000' }],
         preparedTransfers: [{ transaction: preparedTransaction }],
@@ -1021,17 +1035,6 @@ describe('EthereumTool Token Transfer', () => {
   })
 
   it('keeps an ambiguous broadcast attached to its original hash and blocks replacement intents', async () => {
-    const preparedTransaction: PreparedTokenTransfer = {
-      chainId: 11_155_111,
-      data: '0xa9059cbb',
-      gas: 50_000n,
-      maxFeePerGas: 2_000_000_000n,
-      maxPriorityFeePerGas: 1_000_000_000n,
-      nonce: 0,
-      to: tokenAddress,
-      type: 'eip1559',
-      value: 0n,
-    }
     const rpc = {
       ...createScriptedSepoliaRpcAdapter(
         [{ chainId: 11_155_111 }],
@@ -1076,17 +1079,6 @@ describe('EthereumTool Token Transfer', () => {
 
   it('queries the original ambiguous hash and unlocks new work after a successful receipt', async () => {
     const queriedHashes: Hex[] = []
-    const preparedTransaction: PreparedTokenTransfer = {
-      chainId: 11_155_111,
-      data: '0xa9059cbb',
-      gas: 50_000n,
-      maxFeePerGas: 2_000_000_000n,
-      maxPriorityFeePerGas: 1_000_000_000n,
-      nonce: 0,
-      to: tokenAddress,
-      type: 'eip1559',
-      value: 0n,
-    }
     const rpc = {
       ...createScriptedSepoliaRpcAdapter(
         [{ chainId: 11_155_111 }],
@@ -1134,17 +1126,6 @@ describe('EthereumTool Token Transfer', () => {
   })
 
   it('reports a reverted receipt as an execution failure and retains the submitted hash', async () => {
-    const preparedTransaction: PreparedTokenTransfer = {
-      chainId: 11_155_111,
-      data: '0xa9059cbb',
-      gas: 50_000n,
-      maxFeePerGas: 2_000_000_000n,
-      maxPriorityFeePerGas: 1_000_000_000n,
-      nonce: 0,
-      to: tokenAddress,
-      type: 'eip1559',
-      value: 0n,
-    }
     const tool = createEthereumTool({
       rpc: createScriptedSepoliaRpcAdapter(
         [{ chainId: 11_155_111 }],
@@ -1182,17 +1163,6 @@ describe('EthereumTool Token Transfer', () => {
 
   it('becomes unknown after the 120-second observation window and requeries the same hash', async () => {
     const queriedHashes: Hex[] = []
-    const preparedTransaction: PreparedTokenTransfer = {
-      chainId: 11_155_111,
-      data: '0xa9059cbb',
-      gas: 50_000n,
-      maxFeePerGas: 2_000_000_000n,
-      maxPriorityFeePerGas: 1_000_000_000n,
-      nonce: 0,
-      to: tokenAddress,
-      type: 'eip1559',
-      value: 0n,
-    }
     const scriptedRpc = createScriptedSepoliaRpcAdapter(
       [{ chainId: 11_155_111 }],
       [{ balance: 1_000_000_000_000_000_000n }],
@@ -1250,17 +1220,6 @@ describe('EthereumTool Token Transfer', () => {
     vi.useFakeTimers()
 
     try {
-      const preparedTransaction: PreparedTokenTransfer = {
-        chainId: 11_155_111,
-        data: '0xa9059cbb',
-        gas: 50_000n,
-        maxFeePerGas: 2_000_000_000n,
-        maxPriorityFeePerGas: 1_000_000_000n,
-        nonce: 0,
-        to: tokenAddress,
-        type: 'eip1559',
-        value: 0n,
-      }
       const rpc = {
         ...createScriptedSepoliaRpcAdapter(
           [{ chainId: 11_155_111 }],
@@ -1303,17 +1262,6 @@ describe('EthereumTool Token Transfer', () => {
   })
 
   it('reports an explicitly rejected raw transaction without retrying or retaining signed bytes', async () => {
-    const preparedTransaction: PreparedTokenTransfer = {
-      chainId: 11_155_111,
-      data: '0xa9059cbb',
-      gas: 50_000n,
-      maxFeePerGas: 2_000_000_000n,
-      maxPriorityFeePerGas: 1_000_000_000n,
-      nonce: 0,
-      to: tokenAddress,
-      type: 'eip1559',
-      value: 0n,
-    }
     let rawTransactionSubmissions = 0
     let receiptObservations = 0
     const rpc = {
@@ -1361,17 +1309,6 @@ describe('EthereumTool Token Transfer', () => {
   it('submits the exact minimum-unit amount and reports success only after confirmation', async () => {
     const privateKey = generatePrivateKey()
     const transferCalls: string[] = []
-    const preparedTransaction: PreparedTokenTransfer = {
-      chainId: 11_155_111,
-      data: '0xa9059cbb',
-      gas: 50_000n,
-      maxFeePerGas: 2_000_000_000n,
-      maxPriorityFeePerGas: 1_000_000_000n,
-      nonce: 0,
-      to: tokenAddress,
-      type: 'eip1559',
-      value: 0n,
-    }
     const rpc = {
       ...createScriptedSepoliaRpcAdapter(
         [{ chainId: 11_155_111 }],
