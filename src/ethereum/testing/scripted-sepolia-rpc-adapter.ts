@@ -12,23 +12,12 @@ interface EthBalanceResponse {
   readonly balance: bigint
 }
 
-interface ScriptedSepoliaRpcResponses {
-  readonly chainId: readonly (ChainIdResponse | ErrorResponse)[]
-  readonly ethBalance?: readonly (EthBalanceResponse | ErrorResponse)[]
-}
-
-function isLegacyChainIdScript(
-  responses: readonly (ChainIdResponse | ErrorResponse)[] | ScriptedSepoliaRpcResponses,
-): responses is readonly (ChainIdResponse | ErrorResponse)[] {
-  return Array.isArray(responses)
-}
-
 export function createScriptedSepoliaRpcAdapter(
-  responses: readonly (ChainIdResponse | ErrorResponse)[] | ScriptedSepoliaRpcResponses,
+  chainIdResponses: readonly (ChainIdResponse | ErrorResponse)[],
+  ethBalanceResponses: readonly (EthBalanceResponse | ErrorResponse)[] = [],
 ): SepoliaRpcAdapter {
-  const isLegacyScript = isLegacyChainIdScript(responses)
-  const remainingChainIdResponses = [...(isLegacyScript ? responses : responses.chainId)]
-  const remainingEthBalanceResponses = [...(isLegacyScript ? [] : (responses.ethBalance ?? []))]
+  const remainingChainIdResponses = [...chainIdResponses]
+  const remainingEthBalanceResponses = [...ethBalanceResponses]
 
   function takeResponse<T extends ChainIdResponse | EthBalanceResponse>(
     queue: Array<T | ErrorResponse>,

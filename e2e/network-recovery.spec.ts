@@ -14,14 +14,7 @@ function readRequestId(route: Route): unknown {
 }
 
 async function fulfillChainId(route: Route, chainId: number) {
-  await route.fulfill({
-    contentType: 'application/json',
-    body: JSON.stringify({
-      id: readRequestId(route),
-      jsonrpc: '2.0',
-      result: `0x${chainId.toString(16)}`,
-    }),
-  })
+  await fulfillRpcResult(route, `0x${chainId.toString(16)}`)
 }
 
 async function fulfillRpcResult(route: Route, result: string) {

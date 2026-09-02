@@ -84,13 +84,10 @@ describe('EthereumToolView account session', () => {
     const privateKey = generatePrivateKey()
     const address = privateKeyToAccount(privateKey).address
     const tool = createEthereumTool({
-      rpc: createScriptedSepoliaRpcAdapter({
-        chainId: [{ chainId: 11_155_111 }],
-        ethBalance: [
-          { balance: 1_500_000_000_000_000_000n },
-          { balance: 2_000_000_000_000_000_000n },
-        ],
-      }),
+      rpc: createScriptedSepoliaRpcAdapter(
+        [{ chainId: 11_155_111 }],
+        [{ balance: 1_500_000_000_000_000_000n }, { balance: 2_000_000_000_000_000_000n }],
+      ),
     })
     const wrapper = mount(EthereumToolView, {
       global: {
@@ -134,13 +131,13 @@ describe('EthereumToolView account session', () => {
 
   it('keeps the active account visible when balance loading fails and allows refresh', async () => {
     const tool = createEthereumTool({
-      rpc: createScriptedSepoliaRpcAdapter({
-        chainId: [{ chainId: 11_155_111 }],
-        ethBalance: [
+      rpc: createScriptedSepoliaRpcAdapter(
+        [{ chainId: 11_155_111 }],
+        [
           { error: new Error('provider detail must stay private') },
           { balance: 250_000_000_000_000_000n },
         ],
-      }),
+      ),
     })
     const wrapper = mount(EthereumToolView, {
       global: {

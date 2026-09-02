@@ -237,10 +237,10 @@ describe('EthereumTool network', () => {
 describe('EthereumTool account session', () => {
   it('imports a runtime-generated private key and publishes only its public account state', async () => {
     const privateKey = generatePrivateKey()
-    const rpc = createScriptedSepoliaRpcAdapter({
-      chainId: [{ chainId: 11_155_111 }],
-      ethBalance: [{ balance: 1_500_000_000_000_000_000n }],
-    })
+    const rpc = createScriptedSepoliaRpcAdapter(
+      [{ chainId: 11_155_111 }],
+      [{ balance: 1_500_000_000_000_000_000n }],
+    )
     const tool = createEthereumTool({ rpc })
     const observedStatuses: string[] = []
     const unsubscribe = tool.subscribe(({ account }) => observedStatuses.push(account.status))
@@ -295,13 +295,10 @@ describe('EthereumTool account session', () => {
     const firstPrivateKey = generatePrivateKey()
     const secondPrivateKey = generatePrivateKey()
     const tool = createEthereumTool({
-      rpc: createScriptedSepoliaRpcAdapter({
-        chainId: [{ chainId: 11_155_111 }],
-        ethBalance: [
-          { balance: 1_000_000_000_000_000_000n },
-          { balance: 2_000_000_000_000_000_000n },
-        ],
-      }),
+      rpc: createScriptedSepoliaRpcAdapter(
+        [{ chainId: 11_155_111 }],
+        [{ balance: 1_000_000_000_000_000_000n }, { balance: 2_000_000_000_000_000_000n }],
+      ),
     })
     await tool.network.initialize()
     await tool.account.importPrivateKey(firstPrivateKey)
@@ -321,13 +318,13 @@ describe('EthereumTool account session', () => {
   it('surfaces a sanitized balance error and recovers through manual refresh', async () => {
     const privateKey = generatePrivateKey()
     const tool = createEthereumTool({
-      rpc: createScriptedSepoliaRpcAdapter({
-        chainId: [{ chainId: 11_155_111 }],
-        ethBalance: [
+      rpc: createScriptedSepoliaRpcAdapter(
+        [{ chainId: 11_155_111 }],
+        [
           { error: new Error(`failed to read ${privateKey}`) },
           { balance: 3_250_000_000_000_000_000n },
         ],
-      }),
+      ),
     })
     await tool.network.initialize()
 
@@ -358,10 +355,10 @@ describe('EthereumTool account session', () => {
 
   it('locks the account session without changing the valid RPC connection', async () => {
     const tool = createEthereumTool({
-      rpc: createScriptedSepoliaRpcAdapter({
-        chainId: [{ chainId: 11_155_111 }],
-        ethBalance: [{ balance: 500_000_000_000_000_000n }],
-      }),
+      rpc: createScriptedSepoliaRpcAdapter(
+        [{ chainId: 11_155_111 }],
+        [{ balance: 500_000_000_000_000_000n }],
+      ),
     })
     await tool.network.initialize()
     await tool.account.importPrivateKey(generatePrivateKey())
