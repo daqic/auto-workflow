@@ -306,4 +306,67 @@ describe('EthereumToolView Token Transfer', () => {
       wrapper.get('button[type="submit"][name="submit-transfer"]').attributes(),
     ).not.toHaveProperty('disabled')
   })
+
+  it('associates field errors and offers only the official faucet directory for insufficient ETH', async () => {
+    const tokenAddress = '0x1111111111111111111111111111111111111111'
+    const recipient = '0x2222222222222222222222222222222222222222'
+    const preparedTransaction: PreparedTokenTransfer = {
+      chainId: 11_155_111,
+      data: '0xa9059cbb',
+      gas: 50_000n,
+      maxFeePerGas: 2_000_000_000n,
+      maxPriorityFeePerGas: 1_000_000_000n,
+      nonce: 0,
+      to: tokenAddress,
+      type: 'eip1559',
+      value: 0n,
+    }
+    const tool = createEthereumTool({
+      rpc: createScriptedSepoliaRpcAdapter([{ chainId: 11_155_111 }], [{ balance: 1n }], {
+        bytecodes: [{ bytecode: '0x6000' }],
+        preparedTransfers: [{ transaction: preparedTransaction }],
+        tokenBalances: [{ balance: 1_500_000n }],
+        tokenDecimals: [{ decimals: 6 }],
+        tokenNames: [{ name: 'Demo USD' }],
+        tokenSymbols: [{ symbol: 'DUSD' }],
+        transferSimulations: [{ result: true }],
+      }),
+    })
+    const wrapper = mount(EthereumToolView, {
+      global: {
+        provide: {
+          [ethereumToolKey]: tool,
+        },
+      },
+    })
+    await flushPromises()
+    await tool.account.importPrivateKey(generatePrivateKey())
+    await tool.token.inspect(tokenAddress)
+    await flushPromises()
+
+    await wrapper.get('input[name="transfer-recipient"]').setValue('not-an-address')
+    await wrapper.get('input[name="transfer-amount"]').setValue('1')
+    await wrapper.get('form[data-testid="token-transfer-form"]').trigger('submit')
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="transfer-recipient-error"]').text()).toContain(
+      '有效的 Ethereum 收款地址',
+    )
+    expect(wrapper.get('input[name="transfer-recipient"]').attributes()).toMatchObject({
+      'aria-describedby': 'transfer-recipient-help transfer-recipient-error',
+      'aria-invalid': 'true',
+    })
+
+    await wrapper.get('input[name="transfer-recipient"]').setValue(recipient)
+    await wrapper.get('form[data-testid="token-transfer-form"]').trigger('submit')
+    await flushPromises()
+
+    const faucetLink = wrapper.get('a[href="https://ethereum.org/developers/docs/networks/"]')
+    expect(wrapper.get('[data-testid="transfer-error"]').text()).toContain('Sepolia ETH 余额不足')
+    expect(faucetLink.text()).toContain('ethereum.org Sepolia faucet 目录')
+    expect(faucetLink.attributes()).toMatchObject({
+      rel: 'noopener noreferrer',
+      target: '_blank',
+    })
+  })
 })

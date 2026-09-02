@@ -47,6 +47,10 @@ interface TransactionReceiptResponse {
   readonly status: 'success' | 'reverted'
 }
 
+interface TransactionReceiptPendingResponse {
+  readonly pending: true
+}
+
 interface TokenResponses {
   readonly bytecodes?: readonly (BytecodeResponse | ErrorResponse)[]
   readonly tokenBalances?: readonly (TokenBalanceResponse | ErrorResponse)[]
@@ -55,7 +59,9 @@ interface TokenResponses {
   readonly tokenSymbols?: readonly (TokenSymbolResponse | ErrorResponse)[]
   readonly transferSimulations?: readonly (TransferSimulationResponse | ErrorResponse)[]
   readonly preparedTransfers?: readonly (PreparedTransferResponse | ErrorResponse)[]
-  readonly transactionReceipts?: readonly (TransactionReceiptResponse | ErrorResponse)[]
+  readonly transactionReceipts?: readonly (
+    TransactionReceiptResponse | TransactionReceiptPendingResponse | ErrorResponse
+  )[]
 }
 
 export function createScriptedSepoliaRpcAdapter(
@@ -110,6 +116,10 @@ export function createScriptedSepoliaRpcAdapter(
     async getTokenSymbol() {
       return takeResponse(remainingTokenSymbolResponses).symbol
     },
+    async getTransactionStatus() {
+      const response = takeResponse(remainingTransactionReceiptResponses)
+      return 'pending' in response ? null : response
+    },
     async prepareTokenTransfer() {
       return takeResponse(remainingPreparedTransferResponses).transaction
     },
@@ -120,7 +130,8 @@ export function createScriptedSepoliaRpcAdapter(
       return takeResponse(remainingTransferSimulationResponses).result
     },
     async waitForTransactionReceipt() {
-      return takeResponse(remainingTransactionReceiptResponses)
+      const response = takeResponse(remainingTransactionReceiptResponses)
+      return 'pending' in response ? null : response
     },
   }
 }

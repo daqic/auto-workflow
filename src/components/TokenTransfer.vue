@@ -9,21 +9,74 @@ const recipientDraft = ref('')
 const amountDraft = ref('')
 
 const TRANSFER_STATUS_LABELS = {
+  'broadcast-failed': '广播失败',
   'broadcast-error': '广播状态不明确',
   checking: '检查中',
   confirming: '已提交 · 确认中',
   editing: '等待提交',
+  failed: '执行失败',
+  querying: '正在查询原交易',
   signing: '本地签名中',
   submitting: '提交中',
   success: '执行成功',
+  unknown: '状态未知',
 } as const
 
 const transferStatusLabel = computed(() => TRANSFER_STATUS_LABELS[snapshot.value.transfer.status])
+const transactionHashLabel = computed(() => {
+  if (snapshot.value.transfer.status === 'success') {
+    return '已确认交易'
+  }
+
+  if (snapshot.value.transfer.status === 'failed') {
+    return '已收录交易'
+  }
+
+  if (snapshot.value.transfer.status === 'unknown') {
+    return '原交易哈希'
+  }
+
+  return '本地交易哈希'
+})
 const isTransferReady = computed(
   () =>
     snapshot.value.account.address !== null &&
     (snapshot.value.token.canTransfer || snapshot.value.transfer.status !== 'editing'),
 )
+const isTerminalTransfer = computed(() =>
+  ['broadcast-failed', 'failed', 'success', 'unknown'].includes(snapshot.value.transfer.status),
+)
+const recipientError = computed(() =>
+  ['invalid-recipient', 'self-recipient', 'zero-recipient'].includes(
+    snapshot.value.transfer.error?.kind ?? '',
+  )
+    ? snapshot.value.transfer.error
+    : null,
+)
+const amountError = computed(() =>
+  ['amount-exceeds-balance', 'invalid-amount'].includes(snapshot.value.transfer.error?.kind ?? '')
+    ? snapshot.value.transfer.error
+    : null,
+)
+const transferUnavailableReason = computed(() => {
+  if (!snapshot.value.network.canUseChainActions) {
+    return 'Sepolia 网络当前不可用，请先恢复正确的链连接。'
+  }
+
+  if (!snapshot.value.account.address) {
+    return '缺少活动的专用测试账户，请先导入账户。'
+  }
+
+  if (!snapshot.value.token.address) {
+    return '尚未激活目标 Token，请先查询 Token。'
+  }
+
+  if (snapshot.value.token.balance === null) {
+    return '无法读取当前账户的 Token 余额，请先恢复余额查询。'
+  }
+
+  return '当前转账状态不可编辑。'
+})
 
 function useMaximumAmount() {
   if (snapshot.value.transfer.canSubmit && snapshot.value.token.balance !== null) {
@@ -44,6 +97,14 @@ async function submitTransfer() {
   if (submitted) {
     amountDraft.value = ''
   }
+
+  if (isTerminalTransfer.value) {
+    amountDraft.value = ''
+  }
+}
+
+async function queryTransferStatus() {
+  await ethereumTool.transfer.queryStatus()
 }
 
 function startNewTransfer() {
@@ -89,7 +150,7 @@ watch(
 
     <div v-if="!isTransferReady" class="transfer-placeholder" data-testid="transfer-unavailable">
       <strong>转账暂不可用</strong>
-      <span>请先连接 Sepolia、导入专用测试账户，并激活具有可读余额的兼容 Token。</span>
+      <span>{{ transferUnavailableReason }}</span>
     </div>
 
     <form
@@ -113,8 +174,22 @@ watch(
           placeholder="0x..."
           required
           :disabled="!snapshot.transfer.canSubmit"
-          aria-describedby="transfer-recipient-help"
+          :aria-describedby="
+            recipientError
+              ? 'transfer-recipient-help transfer-recipient-error'
+              : 'transfer-recipient-help'
+          "
+          :aria-invalid="recipientError ? 'true' : undefined"
         />
+        <p
+          v-if="recipientError"
+          id="transfer-recipient-error"
+          class="field-error"
+          data-testid="transfer-recipient-error"
+          role="alert"
+        >
+          {{ recipientError.message }}
+        </p>
       </div>
 
       <div class="transfer-field">
@@ -133,7 +208,10 @@ watch(
             placeholder="0.0"
             required
             :disabled="!snapshot.transfer.canSubmit"
-            aria-describedby="transfer-amount-help"
+            :aria-describedby="
+              amountError ? 'transfer-amount-help transfer-amount-error' : 'transfer-amount-help'
+            "
+            :aria-invalid="amountError ? 'true' : undefined"
           />
           <button
             class="button button--secondary"
@@ -145,10 +223,19 @@ watch(
             Max
           </button>
         </div>
+        <p
+          v-if="amountError"
+          id="transfer-amount-error"
+          class="field-error"
+          data-testid="transfer-amount-error"
+          role="alert"
+        >
+          {{ amountError.message }}
+        </p>
       </div>
 
       <p
-        v-if="snapshot.transfer.error"
+        v-if="snapshot.transfer.error && !recipientError && !amountError"
         class="transfer-error"
         data-testid="transfer-error"
         role="alert"
@@ -156,8 +243,20 @@ watch(
         {{ snapshot.transfer.error.message }}
       </p>
 
+      <p v-if="snapshot.transfer.error?.kind === 'insufficient-eth'" class="transfer-recovery">
+        下一步：前往
+        <a
+          href="https://ethereum.org/developers/docs/networks/"
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          ethereum.org Sepolia faucet 目录
+        </a>
+        获取测试 ETH；应用不会直接调用 faucet。
+      </p>
+
       <div v-if="snapshot.transfer.hash" class="transfer-result">
-        <span>{{ snapshot.transfer.status === 'success' ? '已确认交易' : '本地交易哈希' }}</span>
+        <span>{{ transactionHashLabel }}</span>
         <a
           data-testid="transaction-hash"
           :href="`https://sepolia.etherscan.io/tx/${snapshot.transfer.hash}`"
@@ -170,13 +269,23 @@ watch(
 
       <div class="transfer-actions">
         <button
-          v-if="snapshot.transfer.status === 'success'"
+          v-if="isTerminalTransfer"
           class="button button--secondary"
           name="new-transfer"
           type="button"
           @click="startNewTransfer"
         >
           新建转账
+        </button>
+        <button
+          v-if="snapshot.transfer.canQueryStatus || snapshot.transfer.status === 'querying'"
+          class="button button--secondary"
+          name="query-transfer-status"
+          type="button"
+          :disabled="!snapshot.transfer.canQueryStatus"
+          @click="queryTransferStatus"
+        >
+          {{ snapshot.transfer.status === 'querying' ? '正在查询…' : '查询原交易' }}
         </button>
         <button
           class="button button--primary"
@@ -294,9 +403,30 @@ watch(
 }
 
 .transfer-error,
+.transfer-recovery,
 .transfer-result,
 .transfer-actions {
   grid-column: 1 / -1;
+}
+
+.field-error {
+  margin-top: 8px;
+  color: #b91c1c !important;
+}
+
+.transfer-recovery {
+  margin: 0;
+  padding: 14px 16px;
+  border: 1px solid #bfdbfe;
+  border-radius: 10px;
+  color: #1e3a8a;
+  background: #eff6ff;
+  font-size: 14px;
+}
+
+.transfer-recovery a {
+  color: #1d4ed8;
+  font-weight: 700;
 }
 
 .transfer-error {

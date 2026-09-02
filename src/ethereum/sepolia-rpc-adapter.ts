@@ -19,6 +19,13 @@ export interface ObservedTransactionReceipt {
   readonly status: 'success' | 'reverted'
 }
 
+export class RawTransactionRejectedError extends Error {
+  constructor() {
+    super('The RPC explicitly rejected the raw transaction.')
+    this.name = 'RawTransactionRejectedError'
+  }
+}
+
 export interface SepoliaRpcAdapter {
   getChainId(rpcUrl: string): Promise<number>
   getEthBalance(rpcUrl: string, address: `0x${string}`): Promise<bigint>
@@ -31,6 +38,10 @@ export interface SepoliaRpcAdapter {
   getTokenDecimals(rpcUrl: string, tokenAddress: `0x${string}`): Promise<number>
   getTokenName(rpcUrl: string, tokenAddress: `0x${string}`): Promise<string>
   getTokenSymbol(rpcUrl: string, tokenAddress: `0x${string}`): Promise<string>
+  getTransactionStatus(
+    rpcUrl: string,
+    transactionHash: Hex,
+  ): Promise<ObservedTransactionReceipt | null>
   prepareTokenTransfer(
     rpcUrl: string,
     request: TokenTransferRequest,
@@ -40,5 +51,6 @@ export interface SepoliaRpcAdapter {
   waitForTransactionReceipt(
     rpcUrl: string,
     transactionHash: Hex,
-  ): Promise<ObservedTransactionReceipt>
+    timeoutMs: number,
+  ): Promise<ObservedTransactionReceipt | null>
 }

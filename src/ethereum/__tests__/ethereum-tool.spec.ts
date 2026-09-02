@@ -3,7 +3,10 @@ import { keccak256, type Hex } from 'viem'
 import { generatePrivateKey } from 'viem/accounts'
 
 import { DEFAULT_SEPOLIA_RPC_URL, createEthereumTool } from '@/ethereum/ethereum-tool'
-import type { PreparedTokenTransfer } from '@/ethereum/sepolia-rpc-adapter'
+import {
+  RawTransactionRejectedError,
+  type PreparedTokenTransfer,
+} from '@/ethereum/sepolia-rpc-adapter'
 import { createScriptedSepoliaRpcAdapter } from '@/ethereum/testing/scripted-sepolia-rpc-adapter'
 
 describe('EthereumTool network', () => {
@@ -792,8 +795,10 @@ describe('EthereumTool Token Transfer', () => {
   })
 
   it('stops before preparation and signing when transfer simulation does not return true', async () => {
-    const tool = createEthereumTool({
-      rpc: createScriptedSepoliaRpcAdapter(
+    let preparationCalls = 0
+    let rawTransactionSubmissions = 0
+    const rpc = {
+      ...createScriptedSepoliaRpcAdapter(
         [{ chainId: 11_155_111 }],
         [{ balance: 1_000_000_000_000_000_000n }],
         {
@@ -805,7 +810,18 @@ describe('EthereumTool Token Transfer', () => {
           transferSimulations: [{ result: false }],
         },
       ),
-    })
+      async prepareTokenTransfer() {
+        preparationCalls += 1
+        throw new Error('must not prepare')
+      },
+      async sendRawTransaction() {
+        rawTransactionSubmissions += 1
+        throw new Error('must not broadcast')
+      },
+    }
+    const tool = createEthereumTool({ rpc })
+    const observedStatuses: string[] = []
+    tool.subscribe(({ transfer }) => observedStatuses.push(transfer.status))
     await tool.network.initialize()
     await tool.account.importPrivateKey(generatePrivateKey())
     await tool.token.inspect('0x1111111111111111111111111111111111111111')
@@ -818,6 +834,94 @@ describe('EthereumTool Token Transfer', () => {
     ).toBe(false)
     expect(tool.read().transfer).toMatchObject({
       error: { kind: 'simulation-failed' },
+      hash: null,
+      status: 'editing',
+    })
+    expect(observedStatuses).not.toContain('signing')
+    expect(preparationCalls).toBe(0)
+    expect(rawTransactionSubmissions).toBe(0)
+  })
+
+  it.each([
+    ['no return value', new Error('empty contract return data')],
+    ['undecodable return value', new Error('cannot decode bool')],
+    ['a failed call', new Error('execution reverted with sensitive details')],
+  ])('sanitizes %s from transfer simulation before signing', async (_case, simulationError) => {
+    const tool = createEthereumTool({
+      rpc: createScriptedSepoliaRpcAdapter(
+        [{ chainId: 11_155_111 }],
+        [{ balance: 1_000_000_000_000_000_000n }],
+        {
+          bytecodes: [{ bytecode: '0x6000' }],
+          tokenBalances: [{ balance: 1_000_000n }],
+          tokenDecimals: [{ decimals: 6 }],
+          tokenNames: [{ name: 'Demo USD' }],
+          tokenSymbols: [{ symbol: 'DUSD' }],
+          transferSimulations: [{ error: simulationError }],
+        },
+      ),
+    })
+    await tool.network.initialize()
+    await tool.account.importPrivateKey(generatePrivateKey())
+    await tool.token.inspect(tokenAddress)
+
+    expect(await tool.transfer.submit({ amount: '1', recipient })).toBe(false)
+    expect(tool.read().transfer).toMatchObject({
+      error: {
+        kind: 'simulation-failed',
+        message: 'Token transfer 模拟未返回 true，已在签名前停止。',
+      },
+      hash: null,
+      status: 'editing',
+    })
+    expect(JSON.stringify(tool.read())).not.toContain(simulationError.message)
+  })
+
+  it('reports each missing transfer prerequisite through the public snapshot', async () => {
+    const wrongChainTool = createEthereumTool({
+      rpc: createScriptedSepoliaRpcAdapter([{ chainId: 1 }]),
+    })
+    await wrongChainTool.network.initialize()
+    expect(await wrongChainTool.transfer.submit({ amount: '1', recipient })).toBe(false)
+    expect(wrongChainTool.read().transfer.error?.kind).toBe('network-unavailable')
+
+    const missingAccountTool = createEthereumTool({
+      rpc: createScriptedSepoliaRpcAdapter([{ chainId: 11_155_111 }]),
+    })
+    await missingAccountTool.network.initialize()
+    expect(await missingAccountTool.transfer.submit({ amount: '1', recipient })).toBe(false)
+    expect(missingAccountTool.read().transfer.error?.kind).toBe('account-unavailable')
+
+    const missingTokenTool = createEthereumTool({
+      rpc: createScriptedSepoliaRpcAdapter(
+        [{ chainId: 11_155_111 }],
+        [{ balance: 1_000_000_000_000_000_000n }],
+      ),
+    })
+    await missingTokenTool.network.initialize()
+    await missingTokenTool.account.importPrivateKey(generatePrivateKey())
+    expect(await missingTokenTool.transfer.submit({ amount: '1', recipient })).toBe(false)
+    expect(missingTokenTool.read().transfer.error?.kind).toBe('token-unavailable')
+
+    const missingTokenBalanceTool = createEthereumTool({
+      rpc: createScriptedSepoliaRpcAdapter(
+        [{ chainId: 11_155_111 }],
+        [{ balance: 1_000_000_000_000_000_000n }],
+        {
+          bytecodes: [{ bytecode: '0x6000' }],
+          tokenBalances: [{ error: new Error('provider token leaked here') }],
+          tokenDecimals: [{ decimals: 6 }],
+          tokenNames: [{ name: 'Demo USD' }],
+          tokenSymbols: [{ symbol: 'DUSD' }],
+        },
+      ),
+    })
+    await missingTokenBalanceTool.network.initialize()
+    await missingTokenBalanceTool.account.importPrivateKey(generatePrivateKey())
+    await missingTokenBalanceTool.token.inspect(tokenAddress)
+    expect(await missingTokenBalanceTool.transfer.submit({ amount: '1', recipient })).toBe(false)
+    expect(missingTokenBalanceTool.read().transfer).toMatchObject({
+      error: { kind: 'token-balance-unavailable' },
       hash: null,
       status: 'editing',
     })
@@ -903,7 +1007,7 @@ describe('EthereumTool Token Transfer', () => {
     expect(tool.read().transfer).toMatchObject({
       canSubmit: false,
       error: {
-        kind: 'broadcast-failed',
+        kind: 'broadcast-uncertain',
         message: expect.stringContaining('交易可能已到达网络'),
       },
       hash: expect.stringMatching(/^0x[0-9a-f]{64}$/),
@@ -915,6 +1019,234 @@ describe('EthereumTool Token Transfer', () => {
     tool.account.lock()
     expect(tool.read().account.address).toBeNull()
     expect(tool.read().transfer).toMatchObject({ hash: null, status: 'editing' })
+  })
+
+  it('queries the original ambiguous hash and unlocks new work after a successful receipt', async () => {
+    const queriedHashes: Hex[] = []
+    const preparedTransaction: PreparedTokenTransfer = {
+      chainId: 11_155_111,
+      data: '0xa9059cbb',
+      gas: 50_000n,
+      maxFeePerGas: 2_000_000_000n,
+      maxPriorityFeePerGas: 1_000_000_000n,
+      nonce: 0,
+      to: tokenAddress,
+      type: 'eip1559',
+      value: 0n,
+    }
+    const rpc = {
+      ...createScriptedSepoliaRpcAdapter(
+        [{ chainId: 11_155_111 }],
+        [{ balance: 1_000_000_000_000_000_000n }, { balance: 750_000_000_000_000_000n }],
+        {
+          bytecodes: [{ bytecode: '0x6000' }],
+          preparedTransfers: [{ transaction: preparedTransaction }],
+          tokenBalances: [{ balance: 1_000_000n }, { balance: 500_000n }],
+          tokenDecimals: [{ decimals: 6 }],
+          tokenNames: [{ name: 'Demo USD' }],
+          tokenSymbols: [{ symbol: 'DUSD' }],
+          transferSimulations: [{ result: true }],
+        },
+      ),
+      async getTransactionStatus(_rpcUrl: string, transactionHash: Hex) {
+        queriedHashes.push(transactionHash)
+        return { confirmations: 1, status: 'success' as const }
+      },
+      async sendRawTransaction() {
+        throw new Error('ambiguous provider failure')
+      },
+    }
+    const tool = createEthereumTool({ rpc })
+    await tool.network.initialize()
+    await tool.account.importPrivateKey(generatePrivateKey())
+    await tool.token.inspect(tokenAddress)
+
+    expect(await tool.transfer.submit({ amount: '1', recipient })).toBe(false)
+    const originalHash = tool.read().transfer.hash
+    expect(originalHash).toMatch(/^0x[0-9a-f]{64}$/)
+
+    expect(await tool.transfer.queryStatus()).toBe(true)
+    expect(queriedHashes).toEqual([originalHash])
+    expect(tool.read().transfer).toMatchObject({
+      canSubmit: false,
+      error: null,
+      hash: originalHash,
+      status: 'success',
+    })
+    expect(tool.read().account.ethBalance).toBe('0.75')
+    expect(tool.read().token.balance).toBe('0.5')
+
+    tool.transfer.startNew()
+    expect(tool.read().transfer).toMatchObject({ canSubmit: true, hash: null, status: 'editing' })
+  })
+
+  it('reports a reverted receipt as an execution failure and retains the submitted hash', async () => {
+    const preparedTransaction: PreparedTokenTransfer = {
+      chainId: 11_155_111,
+      data: '0xa9059cbb',
+      gas: 50_000n,
+      maxFeePerGas: 2_000_000_000n,
+      maxPriorityFeePerGas: 1_000_000_000n,
+      nonce: 0,
+      to: tokenAddress,
+      type: 'eip1559',
+      value: 0n,
+    }
+    const tool = createEthereumTool({
+      rpc: createScriptedSepoliaRpcAdapter(
+        [{ chainId: 11_155_111 }],
+        [{ balance: 1_000_000_000_000_000_000n }],
+        {
+          bytecodes: [{ bytecode: '0x6000' }],
+          preparedTransfers: [{ transaction: preparedTransaction }],
+          tokenBalances: [{ balance: 1_000_000n }],
+          tokenDecimals: [{ decimals: 6 }],
+          tokenNames: [{ name: 'Demo USD' }],
+          tokenSymbols: [{ symbol: 'DUSD' }],
+          transactionReceipts: [{ confirmations: 1, status: 'reverted' }],
+          transferSimulations: [{ result: true }],
+        },
+      ),
+    })
+    await tool.network.initialize()
+    await tool.account.importPrivateKey(generatePrivateKey())
+    await tool.token.inspect(tokenAddress)
+
+    expect(await tool.transfer.submit({ amount: '1', recipient })).toBe(false)
+    expect(tool.read().transfer).toMatchObject({
+      canSubmit: false,
+      error: {
+        kind: 'execution-failed',
+        message: '交易已被 Sepolia 收录，但链上执行失败。',
+      },
+      hash: expect.stringMatching(/^0x[0-9a-f]{64}$/),
+      status: 'failed',
+    })
+
+    tool.transfer.startNew()
+    expect(tool.read().transfer).toMatchObject({ error: null, hash: null, status: 'editing' })
+  })
+
+  it('becomes unknown after the 120-second observation window and requeries the same hash', async () => {
+    const queriedHashes: Hex[] = []
+    const preparedTransaction: PreparedTokenTransfer = {
+      chainId: 11_155_111,
+      data: '0xa9059cbb',
+      gas: 50_000n,
+      maxFeePerGas: 2_000_000_000n,
+      maxPriorityFeePerGas: 1_000_000_000n,
+      nonce: 0,
+      to: tokenAddress,
+      type: 'eip1559',
+      value: 0n,
+    }
+    const scriptedRpc = createScriptedSepoliaRpcAdapter(
+      [{ chainId: 11_155_111 }],
+      [{ balance: 1_000_000_000_000_000_000n }],
+      {
+        bytecodes: [{ bytecode: '0x6000' }],
+        preparedTransfers: [{ transaction: preparedTransaction }],
+        tokenBalances: [{ balance: 1_000_000n }],
+        tokenDecimals: [{ decimals: 6 }],
+        tokenNames: [{ name: 'Demo USD' }],
+        tokenSymbols: [{ symbol: 'DUSD' }],
+        transferSimulations: [{ result: true }],
+      },
+    )
+    let observedTimeoutMs = 0
+    let queryCount = 0
+    const rpc = {
+      ...scriptedRpc,
+      async getTransactionStatus(_rpcUrl: string, transactionHash: Hex) {
+        queriedHashes.push(transactionHash)
+        queryCount += 1
+        return queryCount === 1 ? null : { confirmations: 1, status: 'reverted' as const }
+      },
+      async waitForTransactionReceipt(_rpcUrl: string, _hash: Hex, timeoutMs: number) {
+        observedTimeoutMs = timeoutMs
+        return null
+      },
+    }
+    const tool = createEthereumTool({ rpc })
+    await tool.network.initialize()
+    await tool.account.importPrivateKey(generatePrivateKey())
+    await tool.token.inspect(tokenAddress)
+
+    expect(await tool.transfer.submit({ amount: '1', recipient })).toBe(false)
+    const originalHash = tool.read().transfer.hash
+    expect(observedTimeoutMs).toBe(120_000)
+    expect(tool.read().transfer).toMatchObject({
+      canQueryStatus: true,
+      error: { kind: 'confirmation-unknown' },
+      hash: originalHash,
+      status: 'unknown',
+    })
+
+    expect(await tool.transfer.queryStatus()).toBe(false)
+    expect(tool.read().transfer.status).toBe('unknown')
+    expect(await tool.transfer.queryStatus()).toBe(false)
+    expect(queriedHashes).toEqual([originalHash, originalHash])
+    expect(tool.read().transfer).toMatchObject({
+      error: { kind: 'execution-failed' },
+      hash: originalHash,
+      status: 'failed',
+    })
+  })
+
+  it('reports an explicitly rejected raw transaction without retrying or retaining signed bytes', async () => {
+    const preparedTransaction: PreparedTokenTransfer = {
+      chainId: 11_155_111,
+      data: '0xa9059cbb',
+      gas: 50_000n,
+      maxFeePerGas: 2_000_000_000n,
+      maxPriorityFeePerGas: 1_000_000_000n,
+      nonce: 0,
+      to: tokenAddress,
+      type: 'eip1559',
+      value: 0n,
+    }
+    let rawTransactionSubmissions = 0
+    let receiptObservations = 0
+    const rpc = {
+      ...createScriptedSepoliaRpcAdapter(
+        [{ chainId: 11_155_111 }],
+        [{ balance: 1_000_000_000_000_000_000n }],
+        {
+          bytecodes: [{ bytecode: '0x6000' }],
+          preparedTransfers: [{ transaction: preparedTransaction }],
+          tokenBalances: [{ balance: 1_000_000n }],
+          tokenDecimals: [{ decimals: 6 }],
+          tokenNames: [{ name: 'Demo USD' }],
+          tokenSymbols: [{ symbol: 'DUSD' }],
+          transferSimulations: [{ result: true }],
+        },
+      ),
+      async sendRawTransaction() {
+        rawTransactionSubmissions += 1
+        throw new RawTransactionRejectedError()
+      },
+      async waitForTransactionReceipt() {
+        receiptObservations += 1
+        return null
+      },
+    }
+    const tool = createEthereumTool({ rpc })
+    await tool.network.initialize()
+    await tool.account.importPrivateKey(generatePrivateKey())
+    await tool.token.inspect(tokenAddress)
+
+    expect(await tool.transfer.submit({ amount: '1', recipient })).toBe(false)
+    expect(rawTransactionSubmissions).toBe(1)
+    expect(receiptObservations).toBe(0)
+    expect(tool.read().transfer).toMatchObject({
+      canSubmit: false,
+      error: { kind: 'broadcast-failed', message: expect.stringContaining('不会自动重试') },
+      hash: null,
+      status: 'broadcast-failed',
+    })
+
+    tool.transfer.startNew()
+    expect(tool.read().transfer).toMatchObject({ canSubmit: true, status: 'editing' })
   })
 
   it('submits the exact minimum-unit amount and reports success only after confirmation', async () => {

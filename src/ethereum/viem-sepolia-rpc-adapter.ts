@@ -1,7 +1,17 @@
-import { createPublicClient, encodeFunctionData, http, parseAbi } from 'viem'
+import {
+  InvalidInputRpcError,
+  TransactionReceiptNotFoundError,
+  TransactionRejectedRpcError,
+  WaitForTransactionReceiptTimeoutError,
+  createPublicClient,
+  encodeFunctionData,
+  http,
+  keccak256,
+  parseAbi,
+} from 'viem'
 import { sepolia } from 'viem/chains'
 
-import type { SepoliaRpcAdapter } from './sepolia-rpc-adapter'
+import { RawTransactionRejectedError, type SepoliaRpcAdapter } from './sepolia-rpc-adapter'
 
 const ERC20_INSPECTION_ABI = parseAbi([
   'function balanceOf(address account) view returns (uint256)',
@@ -58,6 +68,18 @@ export function createViemSepoliaRpcAdapter(): SepoliaRpcAdapter {
         functionName: 'symbol',
       })
     },
+    async getTransactionStatus(rpcUrl, transactionHash) {
+      try {
+        const receipt = await createClient(rpcUrl).getTransactionReceipt({ hash: transactionHash })
+        return { confirmations: 1, status: receipt.status }
+      } catch (error) {
+        if (error instanceof TransactionReceiptNotFoundError) {
+          return null
+        }
+
+        throw error
+      }
+    },
     async prepareTokenTransfer(rpcUrl, request) {
       return createClient(rpcUrl).prepareTransactionRequest({
         account: request.accountAddress,
@@ -72,7 +94,35 @@ export function createViemSepoliaRpcAdapter(): SepoliaRpcAdapter {
       })
     },
     async sendRawTransaction(rpcUrl, signedTransaction) {
-      return createClient(rpcUrl).sendRawTransaction({ serializedTransaction: signedTransaction })
+      const client = createClient(rpcUrl)
+
+      try {
+        return await client.sendRawTransaction({ serializedTransaction: signedTransaction })
+      } catch (error) {
+        if (
+          !(error instanceof InvalidInputRpcError) &&
+          !(error instanceof TransactionRejectedRpcError)
+        ) {
+          throw error
+        }
+
+        const localHash = keccak256(signedTransaction)
+
+        try {
+          const acceptedTransaction = await client.request({
+            method: 'eth_getTransactionByHash',
+            params: [localHash],
+          })
+
+          if (acceptedTransaction) {
+            return localHash
+          }
+        } catch {
+          throw error
+        }
+
+        throw new RawTransactionRejectedError()
+      }
     },
     async simulateTokenTransfer(rpcUrl, request) {
       const simulation = await createClient(rpcUrl).simulateContract({
@@ -85,15 +135,23 @@ export function createViemSepoliaRpcAdapter(): SepoliaRpcAdapter {
 
       return simulation.result
     },
-    async waitForTransactionReceipt(rpcUrl, transactionHash) {
-      const receipt = await createClient(rpcUrl).waitForTransactionReceipt({
-        checkReplacement: false,
-        confirmations: 1,
-        hash: transactionHash,
-        timeout: 120_000,
-      })
+    async waitForTransactionReceipt(rpcUrl, transactionHash, timeoutMs) {
+      try {
+        const receipt = await createClient(rpcUrl).waitForTransactionReceipt({
+          checkReplacement: false,
+          confirmations: 1,
+          hash: transactionHash,
+          timeout: timeoutMs,
+        })
 
-      return { confirmations: 1, status: receipt.status }
+        return { confirmations: 1, status: receipt.status }
+      } catch (error) {
+        if (error instanceof WaitForTransactionReceiptTimeoutError) {
+          return null
+        }
+
+        throw error
+      }
     },
   }
 }
