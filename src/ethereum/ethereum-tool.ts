@@ -1,4 +1,4 @@
-import { formatEther, type Hex } from 'viem'
+import { formatEther, formatUnits, getAddress, type Hex } from 'viem'
 import { privateKeyToAccount, type PrivateKeyAccount } from 'viem/accounts'
 
 import type { SepoliaRpcAdapter } from './sepolia-rpc-adapter'
@@ -9,6 +9,7 @@ export const SEPOLIA_CHAIN_ID = 11_155_111
 type NetworkStatus = 'idle' | 'connecting' | 'connected' | 'error'
 type AccountStatus =
   'locked' | 'importing' | 'loading-balance' | 'connected' | 'import-error' | 'balance-error'
+type TokenStatus = 'idle' | 'inspecting' | 'compatible' | 'error'
 
 interface NetworkProblem {
   readonly kind: 'unreachable' | 'wrong-chain' | 'invalid-url'
@@ -67,6 +68,30 @@ interface AccountSnapshot {
   readonly status: AccountStatus
 }
 
+interface TokenProblem {
+  readonly kind:
+    | 'invalid-address'
+    | 'network-unavailable'
+    | 'bytecode-unavailable'
+    | 'no-bytecode'
+    | 'decimals-unavailable'
+    | 'invalid-decimals'
+    | 'balance-unavailable'
+  readonly message: string
+}
+
+interface TokenSnapshot {
+  readonly address: `0x${string}` | null
+  readonly balance: string | null
+  readonly canInspect: boolean
+  readonly canTransfer: boolean
+  readonly decimals: number | null
+  readonly error: TokenProblem | null
+  readonly name: string | null
+  readonly status: TokenStatus
+  readonly symbol: string | null
+}
+
 type NetworkState = Omit<
   NetworkSnapshot,
   'canApplyRpcOverride' | 'canReconnect' | 'canUseChainActions'
@@ -75,6 +100,7 @@ type NetworkState = Omit<
 export interface EthereumToolSnapshot {
   readonly account: AccountSnapshot
   readonly network: NetworkSnapshot
+  readonly token: TokenSnapshot
 }
 
 export interface EthereumTool {
@@ -90,6 +116,9 @@ export interface EthereumTool {
     lock(): void
     refreshBalance(): Promise<boolean>
   }
+  readonly token: {
+    inspect(tokenAddress: string): Promise<boolean>
+  }
 }
 
 type SepoliaProbeResult =
@@ -98,6 +127,7 @@ type SepoliaProbeResult =
   | { readonly kind: 'wrong-chain' }
 
 type AccountState = Omit<AccountSnapshot, 'canImport' | 'canLock' | 'canRefreshBalance'>
+type TokenState = Omit<TokenSnapshot, 'canInspect' | 'canTransfer'>
 
 const INVALID_PRIVATE_KEY_PROBLEM = Object.freeze({
   kind: 'invalid-private-key' as const,
@@ -114,11 +144,51 @@ const ACCOUNT_NETWORK_UNAVAILABLE_PROBLEM = Object.freeze({
   message: 'Sepolia RPC 尚未连接，暂时无法导入专用测试账户。',
 })
 
-function freezeSnapshot(network: NetworkState, account: AccountState): EthereumToolSnapshot {
+const TOKEN_NETWORK_UNAVAILABLE_PROBLEM = Object.freeze({
+  kind: 'network-unavailable' as const,
+  message: 'Sepolia RPC 尚未连接，暂时无法查询 Token。',
+})
+
+const INVALID_TOKEN_ADDRESS_PROBLEM = Object.freeze({
+  kind: 'invalid-address' as const,
+  message: 'Token 地址格式无效，请输入有效的 Ethereum 合约地址。',
+})
+
+const TOKEN_BYTECODE_UNAVAILABLE_PROBLEM = Object.freeze({
+  kind: 'bytecode-unavailable' as const,
+  message: '无法检查该地址的合约字节码，请确认 RPC 可用后重试。',
+})
+
+const TOKEN_HAS_NO_BYTECODE_PROBLEM = Object.freeze({
+  kind: 'no-bytecode' as const,
+  message: '该地址未检测到合约字节码，不能作为目标 Token。',
+})
+
+const TOKEN_DECIMALS_UNAVAILABLE_PROBLEM = Object.freeze({
+  kind: 'decimals-unavailable' as const,
+  message: '无法读取 Token decimals，兼容性检查未通过。',
+})
+
+const TOKEN_DECIMALS_INVALID_PROBLEM = Object.freeze({
+  kind: 'invalid-decimals' as const,
+  message: 'Token decimals 必须是 0 至 18 的整数，兼容性检查未通过。',
+})
+
+const TOKEN_BALANCE_UNAVAILABLE_PROBLEM = Object.freeze({
+  kind: 'balance-unavailable' as const,
+  message: '无法读取当前账户的 Token 余额，Token 暂不可转账。',
+})
+
+function freezeSnapshot(
+  network: NetworkState,
+  account: AccountState,
+  token: TokenState,
+): EthereumToolSnapshot {
   const isNetworkBusy = network.status === 'connecting' || network.isValidatingRpc
   const canUseChainActions = network.status === 'connected' && network.chainId === SEPOLIA_CHAIN_ID
   const isAccountBusy = account.status === 'importing' || account.status === 'loading-balance'
   const hasActiveAccount = account.address !== null
+  const isTokenBusy = token.status === 'inspecting'
 
   return Object.freeze({
     account: Object.freeze({
@@ -133,6 +203,15 @@ function freezeSnapshot(network: NetworkState, account: AccountState): EthereumT
       canReconnect:
         !isNetworkBusy && (network.status === 'connected' || network.status === 'error'),
       canUseChainActions,
+    }),
+    token: Object.freeze({
+      ...token,
+      canInspect: canUseChainActions && !isTokenBusy,
+      canTransfer:
+        canUseChainActions &&
+        hasActiveAccount &&
+        token.status === 'compatible' &&
+        token.balance !== null,
     }),
   })
 }
@@ -156,13 +235,23 @@ export function createEthereumTool({ rpc }: { rpc: SepoliaRpcAdapter }): Ethereu
     ethBalance: null,
     status: 'locked',
   }
+  let tokenState: TokenState = {
+    address: null,
+    balance: null,
+    decimals: null,
+    error: null,
+    name: null,
+    status: 'idle',
+    symbol: null,
+  }
   let localAccount: PrivateKeyAccount | undefined
   let accountOperationId = 0
-  let snapshot = freezeSnapshot(networkState, accountState)
+  let tokenOperationId = 0
+  let snapshot = freezeSnapshot(networkState, accountState, tokenState)
   const listeners = new Set<(snapshot: EthereumToolSnapshot) => void>()
 
   function notify() {
-    snapshot = freezeSnapshot(networkState, accountState)
+    snapshot = freezeSnapshot(networkState, accountState, tokenState)
     listeners.forEach((listener) => listener(snapshot))
   }
 
@@ -173,6 +262,11 @@ export function createEthereumTool({ rpc }: { rpc: SepoliaRpcAdapter }): Ethereu
 
   function publishAccount(accountPatch: Partial<AccountState>) {
     accountState = { ...accountState, ...accountPatch }
+    notify()
+  }
+
+  function publishToken(tokenPatch: Partial<TokenState>) {
+    tokenState = { ...tokenState, ...tokenPatch }
     notify()
   }
 
@@ -322,12 +416,16 @@ export function createEthereumTool({ rpc }: { rpc: SepoliaRpcAdapter }): Ethereu
   async function importPrivateKey(privateKey: string) {
     const operationId = ++accountOperationId
     localAccount = undefined
+    tokenOperationId += 1
     publishAccount({
       address: null,
       error: null,
       ethBalance: null,
       status: 'importing',
     })
+    if (tokenState.address && tokenState.decimals !== null) {
+      publishToken({ balance: null, error: null, status: 'compatible' })
+    }
 
     await Promise.resolve()
 
@@ -365,11 +463,24 @@ export function createEthereumTool({ rpc }: { rpc: SepoliaRpcAdapter }): Ethereu
 
     localAccount = nextAccount
     await refreshBalanceFor(nextAccount, operationId)
+
+    if (
+      operationId === accountOperationId &&
+      localAccount === nextAccount &&
+      tokenState.address &&
+      tokenState.decimals !== null &&
+      tokenState.status === 'compatible'
+    ) {
+      const tokenBalanceOperationId = ++tokenOperationId
+      await refreshTokenBalanceFor(nextAccount, tokenBalanceOperationId)
+    }
+
     return operationId === accountOperationId && localAccount === nextAccount
   }
 
   function lock() {
     accountOperationId += 1
+    tokenOperationId += 1
     localAccount = undefined
     publishAccount({
       address: null,
@@ -377,6 +488,9 @@ export function createEthereumTool({ rpc }: { rpc: SepoliaRpcAdapter }): Ethereu
       ethBalance: null,
       status: 'locked',
     })
+    if (tokenState.address && tokenState.decimals !== null) {
+      publishToken({ balance: null, error: null, status: 'compatible' })
+    }
   }
 
   async function refreshBalance() {
@@ -386,6 +500,146 @@ export function createEthereumTool({ rpc }: { rpc: SepoliaRpcAdapter }): Ethereu
 
     const operationId = ++accountOperationId
     return refreshBalanceFor(localAccount, operationId)
+  }
+
+  async function refreshTokenBalanceFor(
+    account: PrivateKeyAccount,
+    operationId: number,
+  ): Promise<boolean> {
+    const { address, decimals } = tokenState
+
+    if (!address || decimals === null) {
+      return false
+    }
+
+    publishToken({ balance: null, error: null, status: 'inspecting' })
+
+    try {
+      const balance = await rpc.getTokenBalance(networkState.activeRpcUrl, address, account.address)
+
+      if (operationId !== tokenOperationId || localAccount !== account) {
+        return false
+      }
+
+      publishToken({
+        balance: formatUnits(balance, decimals),
+        error: null,
+        status: 'compatible',
+      })
+      return true
+    } catch {
+      if (operationId !== tokenOperationId || localAccount !== account) {
+        return false
+      }
+
+      publishToken({
+        balance: null,
+        error: TOKEN_BALANCE_UNAVAILABLE_PROBLEM,
+        status: 'error',
+      })
+      return false
+    }
+  }
+
+  async function inspectToken(tokenAddress: string) {
+    const operationId = ++tokenOperationId
+    publishToken({
+      address: null,
+      balance: null,
+      decimals: null,
+      error: null,
+      name: null,
+      status: 'inspecting',
+      symbol: null,
+    })
+
+    if (!snapshot.network.canUseChainActions) {
+      publishToken({ error: TOKEN_NETWORK_UNAVAILABLE_PROBLEM, status: 'error' })
+      return false
+    }
+
+    let address: `0x${string}`
+
+    try {
+      address = getAddress(tokenAddress.trim())
+    } catch {
+      publishToken({ error: INVALID_TOKEN_ADDRESS_PROBLEM, status: 'error' })
+      return false
+    }
+
+    let bytecode: Hex | undefined
+
+    try {
+      bytecode = await rpc.getBytecode(networkState.activeRpcUrl, address)
+    } catch {
+      if (operationId !== tokenOperationId) {
+        return false
+      }
+      publishToken({ error: TOKEN_BYTECODE_UNAVAILABLE_PROBLEM, status: 'error' })
+      return false
+    }
+
+    if (operationId !== tokenOperationId) {
+      return false
+    }
+
+    if (!bytecode || bytecode === '0x') {
+      publishToken({ error: TOKEN_HAS_NO_BYTECODE_PROBLEM, status: 'error' })
+      return false
+    }
+
+    let decimals: number
+
+    try {
+      decimals = await rpc.getTokenDecimals(networkState.activeRpcUrl, address)
+    } catch {
+      if (operationId !== tokenOperationId) {
+        return false
+      }
+      publishToken({ error: TOKEN_DECIMALS_UNAVAILABLE_PROBLEM, status: 'error' })
+      return false
+    }
+
+    if (operationId !== tokenOperationId) {
+      return false
+    }
+
+    if (!Number.isInteger(decimals) || decimals < 0 || decimals > 18) {
+      publishToken({ error: TOKEN_DECIMALS_INVALID_PROBLEM, status: 'error' })
+      return false
+    }
+
+    const [nameResult, symbolResult] = await Promise.allSettled([
+      rpc.getTokenName(networkState.activeRpcUrl, address),
+      rpc.getTokenSymbol(networkState.activeRpcUrl, address),
+    ])
+
+    if (operationId !== tokenOperationId) {
+      return false
+    }
+    const name =
+      nameResult.status === 'fulfilled' && nameResult.value.trim() ? nameResult.value : address
+    const symbol =
+      symbolResult.status === 'fulfilled' && symbolResult.value.trim()
+        ? symbolResult.value
+        : address
+
+    if (localAccount) {
+      const account = localAccount
+      publishToken({ address, decimals, name, symbol })
+      return refreshTokenBalanceFor(account, operationId)
+    }
+
+    publishToken({
+      address,
+      balance: null,
+      decimals,
+      error: null,
+      name,
+      status: 'compatible',
+      symbol,
+    })
+    return true
   }
 
   return {
@@ -403,6 +657,9 @@ export function createEthereumTool({ rpc }: { rpc: SepoliaRpcAdapter }): Ethereu
       importPrivateKey,
       lock,
       refreshBalance,
+    },
+    token: {
+      inspect: inspectToken,
     },
   }
 }

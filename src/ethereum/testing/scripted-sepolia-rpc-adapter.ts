@@ -1,4 +1,5 @@
 import type { SepoliaRpcAdapter } from '../sepolia-rpc-adapter'
+import type { Hex } from 'viem'
 
 interface ChainIdResponse {
   readonly chainId: number
@@ -12,16 +13,48 @@ interface EthBalanceResponse {
   readonly balance: bigint
 }
 
+interface BytecodeResponse {
+  readonly bytecode: Hex | undefined
+}
+
+interface TokenBalanceResponse {
+  readonly balance: bigint
+}
+
+interface TokenDecimalsResponse {
+  readonly decimals: number
+}
+
+interface TokenNameResponse {
+  readonly name: string
+}
+
+interface TokenSymbolResponse {
+  readonly symbol: string
+}
+
+interface TokenResponses {
+  readonly bytecodes?: readonly (BytecodeResponse | ErrorResponse)[]
+  readonly tokenBalances?: readonly (TokenBalanceResponse | ErrorResponse)[]
+  readonly tokenDecimals?: readonly (TokenDecimalsResponse | ErrorResponse)[]
+  readonly tokenNames?: readonly (TokenNameResponse | ErrorResponse)[]
+  readonly tokenSymbols?: readonly (TokenSymbolResponse | ErrorResponse)[]
+}
+
 export function createScriptedSepoliaRpcAdapter(
   chainIdResponses: readonly (ChainIdResponse | ErrorResponse)[],
   ethBalanceResponses: readonly (EthBalanceResponse | ErrorResponse)[] = [],
+  tokenResponses: TokenResponses = {},
 ): SepoliaRpcAdapter {
   const remainingChainIdResponses = [...chainIdResponses]
   const remainingEthBalanceResponses = [...ethBalanceResponses]
+  const remainingBytecodeResponses = [...(tokenResponses.bytecodes ?? [])]
+  const remainingTokenBalanceResponses = [...(tokenResponses.tokenBalances ?? [])]
+  const remainingTokenDecimalsResponses = [...(tokenResponses.tokenDecimals ?? [])]
+  const remainingTokenNameResponses = [...(tokenResponses.tokenNames ?? [])]
+  const remainingTokenSymbolResponses = [...(tokenResponses.tokenSymbols ?? [])]
 
-  function takeResponse<T extends ChainIdResponse | EthBalanceResponse>(
-    queue: Array<T | ErrorResponse>,
-  ): T {
+  function takeResponse<T extends object>(queue: Array<T | ErrorResponse>): T {
     const response = queue.shift()
 
     if (!response) {
@@ -41,6 +74,21 @@ export function createScriptedSepoliaRpcAdapter(
     },
     async getEthBalance() {
       return takeResponse(remainingEthBalanceResponses).balance
+    },
+    async getBytecode() {
+      return takeResponse(remainingBytecodeResponses).bytecode
+    },
+    async getTokenBalance() {
+      return takeResponse(remainingTokenBalanceResponses).balance
+    },
+    async getTokenDecimals() {
+      return takeResponse(remainingTokenDecimalsResponses).decimals
+    },
+    async getTokenName() {
+      return takeResponse(remainingTokenNameResponses).name
+    },
+    async getTokenSymbol() {
+      return takeResponse(remainingTokenSymbolResponses).symbol
     },
   }
 }

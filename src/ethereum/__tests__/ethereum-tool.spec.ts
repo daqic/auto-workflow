@@ -382,3 +382,257 @@ describe('EthereumTool account session', () => {
     })
   })
 })
+
+describe('EthereumTool Token Inspector', () => {
+  it('activates a compatible Token after public inspection without an account', async () => {
+    const tokenAddress = '0x1111111111111111111111111111111111111111'
+    const tool = createEthereumTool({
+      rpc: createScriptedSepoliaRpcAdapter([{ chainId: 11_155_111 }], [], {
+        bytecodes: [{ bytecode: '0x6000' }],
+        tokenDecimals: [{ decimals: 6 }],
+        tokenNames: [{ name: 'Demo USD' }],
+        tokenSymbols: [{ symbol: 'DUSD' }],
+      }),
+    })
+    await tool.network.initialize()
+
+    const inspected = await tool.token.inspect(tokenAddress)
+
+    expect(inspected).toBe(true)
+    expect(tool.read().token).toEqual({
+      address: tokenAddress,
+      balance: null,
+      canInspect: true,
+      canTransfer: false,
+      decimals: 6,
+      error: null,
+      name: 'Demo USD',
+      status: 'compatible',
+      symbol: 'DUSD',
+    })
+  })
+
+  it('normalizes the Token address and requires a readable account balance', async () => {
+    const privateKey = generatePrivateKey()
+    const tokenAddress = '0x52908400098527886e0f7030069857d2e4169ee7'
+    const checksumAddress = '0x52908400098527886E0F7030069857D2E4169EE7'
+    const tool = createEthereumTool({
+      rpc: createScriptedSepoliaRpcAdapter(
+        [{ chainId: 11_155_111 }],
+        [{ balance: 1_000_000_000_000_000_000n }],
+        {
+          bytecodes: [{ bytecode: '0x6000' }],
+          tokenBalances: [{ balance: 1_234_500n }],
+          tokenDecimals: [{ decimals: 6 }],
+          tokenNames: [{ name: 'Demo USD' }],
+          tokenSymbols: [{ symbol: 'DUSD' }],
+        },
+      ),
+    })
+    await tool.network.initialize()
+    await tool.account.importPrivateKey(privateKey)
+
+    const inspected = await tool.token.inspect(tokenAddress)
+
+    expect(inspected).toBe(true)
+    expect(tool.read().token).toMatchObject({
+      address: checksumAddress,
+      balance: '1.2345',
+      canTransfer: true,
+      decimals: 6,
+      status: 'compatible',
+    })
+  })
+
+  it.each([
+    ['a bytecode lookup failure', { error: new Error('provider detail') }, 'bytecode-unavailable'],
+    ['an address without bytecode', { bytecode: undefined }, 'no-bytecode'],
+  ])('distinguishes %s', async (_case, bytecodeResponse, expectedKind) => {
+    const tool = createEthereumTool({
+      rpc: createScriptedSepoliaRpcAdapter([{ chainId: 11_155_111 }], [], {
+        bytecodes: [bytecodeResponse],
+      }),
+    })
+    await tool.network.initialize()
+
+    const inspected = await tool.token.inspect('0x1111111111111111111111111111111111111111')
+
+    expect(inspected).toBe(false)
+    expect(tool.read().token).toMatchObject({
+      address: null,
+      canTransfer: false,
+      error: { kind: expectedKind },
+      status: 'error',
+    })
+    expect(JSON.stringify(tool.read())).not.toContain('provider detail')
+  })
+
+  it.each([0, 18])('accepts the supported decimals boundary %i', async (decimals) => {
+    const tool = createEthereumTool({
+      rpc: createScriptedSepoliaRpcAdapter([{ chainId: 11_155_111 }], [], {
+        bytecodes: [{ bytecode: '0x6000' }],
+        tokenDecimals: [{ decimals }],
+        tokenNames: [{ name: 'Boundary Token' }],
+        tokenSymbols: [{ symbol: 'BOUND' }],
+      }),
+    })
+    await tool.network.initialize()
+
+    expect(await tool.token.inspect('0x1111111111111111111111111111111111111111')).toBe(true)
+    expect(tool.read().token.decimals).toBe(decimals)
+  })
+
+  it.each([
+    ['an out-of-range value', { decimals: 19 }, 'invalid-decimals'],
+    ['an unparseable value', { decimals: Number.NaN }, 'invalid-decimals'],
+    ['a failed call', { error: new Error('decode failed') }, 'decimals-unavailable'],
+  ])('does not activate a Token with %s for decimals', async (_case, response, expectedKind) => {
+    const tool = createEthereumTool({
+      rpc: createScriptedSepoliaRpcAdapter([{ chainId: 11_155_111 }], [], {
+        bytecodes: [{ bytecode: '0x6000' }],
+        tokenDecimals: [response],
+      }),
+    })
+    await tool.network.initialize()
+
+    expect(await tool.token.inspect('0x1111111111111111111111111111111111111111')).toBe(false)
+    expect(tool.read().token).toMatchObject({
+      address: null,
+      canTransfer: false,
+      error: { kind: expectedKind },
+      status: 'error',
+    })
+  })
+
+  it('falls back to the checksum address when optional metadata is unavailable', async () => {
+    const tokenAddress = '0x52908400098527886E0F7030069857D2E4169EE7'
+    const tool = createEthereumTool({
+      rpc: createScriptedSepoliaRpcAdapter([{ chainId: 11_155_111 }], [], {
+        bytecodes: [{ bytecode: '0x6000' }],
+        tokenDecimals: [{ decimals: 18 }],
+        tokenNames: [{ error: new Error('name unavailable') }],
+        tokenSymbols: [{ symbol: '' }],
+      }),
+    })
+    await tool.network.initialize()
+
+    expect(await tool.token.inspect(tokenAddress)).toBe(true)
+    expect(tool.read().token).toMatchObject({
+      address: tokenAddress,
+      name: tokenAddress,
+      symbol: tokenAddress,
+    })
+  })
+
+  it('does not make a Token transferable when balanceOf fails for the active account', async () => {
+    const tool = createEthereumTool({
+      rpc: createScriptedSepoliaRpcAdapter(
+        [{ chainId: 11_155_111 }],
+        [{ balance: 1_000_000_000_000_000_000n }],
+        {
+          bytecodes: [{ bytecode: '0x6000' }],
+          tokenBalances: [{ error: new Error('balance provider detail') }],
+          tokenDecimals: [{ decimals: 18 }],
+          tokenNames: [{ name: 'Demo Token' }],
+          tokenSymbols: [{ symbol: 'DEMO' }],
+        },
+      ),
+    })
+    await tool.network.initialize()
+    await tool.account.importPrivateKey(generatePrivateKey())
+
+    expect(await tool.token.inspect('0x1111111111111111111111111111111111111111')).toBe(false)
+    expect(tool.read().token).toMatchObject({
+      balance: null,
+      canTransfer: false,
+      error: { kind: 'balance-unavailable' },
+      status: 'error',
+    })
+    expect(JSON.stringify(tool.read())).not.toContain('balance provider detail')
+  })
+
+  it('clears the prior Token result synchronously when a new query starts', async () => {
+    const tool = createEthereumTool({
+      rpc: createScriptedSepoliaRpcAdapter([{ chainId: 11_155_111 }], [], {
+        bytecodes: [{ bytecode: '0x6000' }, { bytecode: undefined }],
+        tokenDecimals: [{ decimals: 6 }],
+        tokenNames: [{ name: 'Old Token' }],
+        tokenSymbols: [{ symbol: 'OLD' }],
+      }),
+    })
+    await tool.network.initialize()
+    await tool.token.inspect('0x1111111111111111111111111111111111111111')
+
+    const nextInspection = tool.token.inspect('0x2222222222222222222222222222222222222222')
+
+    expect(tool.read().token).toMatchObject({
+      address: null,
+      balance: null,
+      decimals: null,
+      name: null,
+      status: 'inspecting',
+      symbol: null,
+    })
+    await nextInspection
+  })
+
+  it('automatically checks the active Token balance after account import', async () => {
+    const tool = createEthereumTool({
+      rpc: createScriptedSepoliaRpcAdapter(
+        [{ chainId: 11_155_111 }],
+        [{ balance: 1_000_000_000_000_000_000n }],
+        {
+          bytecodes: [{ bytecode: '0x6000' }],
+          tokenBalances: [{ balance: 42_500_000n }],
+          tokenDecimals: [{ decimals: 6 }],
+          tokenNames: [{ name: 'Demo USD' }],
+          tokenSymbols: [{ symbol: 'DUSD' }],
+        },
+      ),
+    })
+    await tool.network.initialize()
+    await tool.token.inspect('0x1111111111111111111111111111111111111111')
+
+    await tool.account.importPrivateKey(generatePrivateKey())
+
+    expect(tool.read().token).toMatchObject({
+      balance: '42.5',
+      canTransfer: true,
+      error: null,
+      status: 'compatible',
+    })
+  })
+
+  it('retains public Token metadata but clears its account balance after lock', async () => {
+    const tokenAddress = '0x1111111111111111111111111111111111111111'
+    const tool = createEthereumTool({
+      rpc: createScriptedSepoliaRpcAdapter(
+        [{ chainId: 11_155_111 }],
+        [{ balance: 1_000_000_000_000_000_000n }],
+        {
+          bytecodes: [{ bytecode: '0x6000' }],
+          tokenBalances: [{ balance: 25_000_000n }],
+          tokenDecimals: [{ decimals: 6 }],
+          tokenNames: [{ name: 'Demo USD' }],
+          tokenSymbols: [{ symbol: 'DUSD' }],
+        },
+      ),
+    })
+    await tool.network.initialize()
+    await tool.account.importPrivateKey(generatePrivateKey())
+    await tool.token.inspect(tokenAddress)
+
+    tool.account.lock()
+
+    expect(tool.read().token).toMatchObject({
+      address: tokenAddress,
+      balance: null,
+      canTransfer: false,
+      decimals: 6,
+      error: null,
+      name: 'Demo USD',
+      status: 'compatible',
+      symbol: 'DUSD',
+    })
+  })
+})

@@ -2,6 +2,7 @@
 import { computed, onMounted, ref } from 'vue'
 
 import AccountSessionHeader from '@/components/AccountSessionHeader.vue'
+import TokenInspector from '@/components/TokenInspector.vue'
 import { useEthereumTool, useEthereumToolSnapshot } from '@/ethereum/vue-ethereum-tool'
 
 const ethereumTool = useEthereumTool()
@@ -169,6 +170,8 @@ onMounted(() => {
           <p class="session-note">此设置只在当前页面会话中有效，刷新后恢复默认 RPC。</p>
         </details>
       </section>
+
+      <TokenInspector />
 
       <aside class="safety-note" aria-labelledby="safety-heading">
         <span class="safety-mark" aria-hidden="true">i</span>

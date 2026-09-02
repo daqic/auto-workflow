@@ -162,3 +162,70 @@ describe('EthereumToolView account session', () => {
     expect(wrapper.get('[data-testid="eth-balance"]').text()).toBe('0.25 ETH')
   })
 })
+
+describe('EthereumToolView Token Inspector', () => {
+  it('waits for an explicit query and renders the compatible public Token result', async () => {
+    const tokenAddress = '0x1111111111111111111111111111111111111111'
+    const tool = createEthereumTool({
+      rpc: createScriptedSepoliaRpcAdapter([{ chainId: 11_155_111 }], [], {
+        bytecodes: [{ bytecode: '0x6000' }],
+        tokenDecimals: [{ decimals: 6 }],
+        tokenNames: [{ name: 'Demo USD' }],
+        tokenSymbols: [{ symbol: 'DUSD' }],
+      }),
+    })
+    const wrapper = mount(EthereumToolView, {
+      global: {
+        provide: {
+          [ethereumToolKey]: tool,
+        },
+      },
+    })
+    await flushPromises()
+
+    const input = wrapper.get('input[name="token-address"]')
+    await input.setValue(tokenAddress)
+
+    expect(wrapper.get('[data-testid="token-empty-state"]').text()).toContain('尚未查询')
+    expect(tool.read().token.status).toBe('idle')
+
+    await wrapper.get('form[data-testid="token-inspector-form"]').trigger('submit')
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="token-compatibility"]').text()).toContain('兼容性检查通过')
+    expect(wrapper.get('[data-testid="token-name"]').text()).toBe('Demo USD')
+    expect(wrapper.get('[data-testid="token-symbol"]').text()).toBe('DUSD')
+    expect(wrapper.get('[data-testid="token-decimals"]').text()).toBe('6')
+    expect(wrapper.get('[data-testid="token-balance"]').text()).toContain('余额尚不可用')
+    expect(wrapper.get('[data-testid="token-address"]').attributes()).toMatchObject({
+      href: `https://sepolia.etherscan.io/token/${tokenAddress}`,
+      rel: 'noopener noreferrer',
+      target: '_blank',
+    })
+  })
+
+  it('renders a specific inline error when the address has no bytecode', async () => {
+    const tool = createEthereumTool({
+      rpc: createScriptedSepoliaRpcAdapter([{ chainId: 11_155_111 }], [], {
+        bytecodes: [{ bytecode: undefined }],
+      }),
+    })
+    const wrapper = mount(EthereumToolView, {
+      global: {
+        provide: {
+          [ethereumToolKey]: tool,
+        },
+      },
+    })
+    await flushPromises()
+
+    await wrapper
+      .get('input[name="token-address"]')
+      .setValue('0x1111111111111111111111111111111111111111')
+    await wrapper.get('form[data-testid="token-inspector-form"]').trigger('submit')
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="token-error"]').text()).toContain('未检测到合约字节码')
+    expect(wrapper.find('[data-testid="token-compatibility"]').exists()).toBe(false)
+  })
+})

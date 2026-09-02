@@ -1,7 +1,14 @@
 import { expect, test, type Route } from '@playwright/test'
+import { encodeFunctionResult, parseAbi } from 'viem'
 import { generatePrivateKey, privateKeyToAccount } from 'viem/accounts'
 
 const defaultRpcUrl = 'https://ethereum-sepolia-rpc.publicnode.com'
+const tokenInspectionAbi = parseAbi([
+  'function balanceOf(address account) view returns (uint256)',
+  'function decimals() view returns (uint8)',
+  'function name() view returns (string)',
+  'function symbol() view returns (string)',
+])
 
 function readRequestId(route: Route): unknown {
   const body: unknown = JSON.parse(route.request().postData() ?? '{}')
@@ -36,6 +43,22 @@ function readRpcMethod(route: Route): string | null {
   }
 
   return typeof body.method === 'string' ? body.method : null
+}
+
+function readRpcCallData(route: Route): string | null {
+  const body: unknown = JSON.parse(route.request().postData() ?? '{}')
+
+  if (typeof body !== 'object' || body === null || !('params' in body)) {
+    return null
+  }
+
+  const params = body.params
+
+  if (!Array.isArray(params) || typeof params[0] !== 'object' || params[0] === null) {
+    return null
+  }
+
+  return 'data' in params[0] && typeof params[0].data === 'string' ? params[0].data : null
 }
 
 test('validates the default production RPC path before enabling Sepolia actions', async ({
@@ -197,4 +220,141 @@ test('clears and safely rejects unsupported private-key input', async ({ page })
   await expect(page.getByTestId('account-error')).toContainText('0x 开头的 64 位十六进制')
   await expect(page.getByTestId('account-error')).not.toContainText(privateKeyWithoutPrefix)
   await expect(page.getByLabel('专用测试账户')).toHaveValue('')
+})
+
+test('queries a compatible Token only on demand and adds its account balance after import', async ({
+  page,
+}) => {
+  const privateKey = generatePrivateKey()
+  const tokenAddress = '0x1111111111111111111111111111111111111111'
+  let requests = 0
+
+  await page.route(`${defaultRpcUrl}/**`, async (route) => {
+    requests += 1
+    const method = readRpcMethod(route)
+
+    if (method === 'eth_chainId') {
+      await fulfillChainId(route, 11_155_111)
+      return
+    }
+
+    if (method === 'eth_getCode') {
+      await fulfillRpcResult(route, '0x6000')
+      return
+    }
+
+    if (method === 'eth_getBalance') {
+      await fulfillRpcResult(route, '0xde0b6b3a7640000')
+      return
+    }
+
+    if (method === 'eth_call') {
+      const callData = readRpcCallData(route)
+
+      if (callData?.startsWith('0x313ce567')) {
+        await fulfillRpcResult(
+          route,
+          encodeFunctionResult({ abi: tokenInspectionAbi, functionName: 'decimals', result: 6 }),
+        )
+        return
+      }
+
+      if (callData?.startsWith('0x06fdde03')) {
+        await fulfillRpcResult(
+          route,
+          encodeFunctionResult({
+            abi: tokenInspectionAbi,
+            functionName: 'name',
+            result: 'Demo USD',
+          }),
+        )
+        return
+      }
+
+      if (callData?.startsWith('0x95d89b41')) {
+        await fulfillRpcResult(
+          route,
+          encodeFunctionResult({
+            abi: tokenInspectionAbi,
+            functionName: 'symbol',
+            result: 'DUSD',
+          }),
+        )
+        return
+      }
+
+      if (callData?.startsWith('0x70a08231')) {
+        await fulfillRpcResult(
+          route,
+          encodeFunctionResult({
+            abi: tokenInspectionAbi,
+            functionName: 'balanceOf',
+            result: 1_234_500n,
+          }),
+        )
+        return
+      }
+    }
+
+    await route.abort('failed')
+  })
+
+  await page.goto('/')
+  await expect(page.getByTestId('network-status')).toContainText('已连接')
+
+  await page.getByLabel('Token contract address').fill(tokenAddress)
+  expect(requests).toBe(1)
+  await expect(page.getByTestId('token-empty-state')).toContainText('尚未查询')
+
+  await page.getByRole('button', { name: '查询 Token' }).click()
+  await expect(page.getByTestId('token-compatibility')).toContainText('兼容性检查通过')
+  await expect(page.getByTestId('token-name')).toHaveText('Demo USD')
+  await expect(page.getByTestId('token-symbol')).toHaveText('DUSD')
+  await expect(page.getByTestId('token-decimals')).toHaveText('6')
+  await expect(page.getByTestId('token-balance')).toContainText('余额尚不可用')
+  await expect(page.getByTestId('token-address')).toHaveAttribute(
+    'href',
+    `https://sepolia.etherscan.io/token/${tokenAddress}`,
+  )
+  await expect(page.getByTestId('token-address')).toHaveAttribute('target', '_blank')
+
+  await page.getByLabel('专用测试账户').fill(privateKey)
+  await page.getByRole('button', { name: '导入账户' }).click()
+  await expect(page.getByTestId('token-balance')).toHaveText('1.2345 DUSD')
+
+  const persistedBrowserState = await page.evaluate(() => ({
+    localStorageValues: Object.values(localStorage),
+    sessionStorageValues: Object.values(sessionStorage),
+    url: window.location.href,
+  }))
+  expect(JSON.stringify(persistedBrowserState)).not.toContain(tokenAddress)
+
+  await page.getByRole('button', { name: '锁定', exact: true }).click()
+  await expect(page.getByTestId('token-compatibility')).toContainText('兼容性检查通过')
+  await expect(page.getByTestId('token-balance')).toContainText('余额尚不可用')
+})
+
+test('shows a specific Token error for an address without contract bytecode', async ({ page }) => {
+  await page.route(`${defaultRpcUrl}/**`, async (route) => {
+    const method = readRpcMethod(route)
+
+    if (method === 'eth_chainId') {
+      await fulfillChainId(route, 11_155_111)
+      return
+    }
+
+    if (method === 'eth_getCode') {
+      await fulfillRpcResult(route, '0x')
+      return
+    }
+
+    await route.abort('failed')
+  })
+
+  await page.goto('/')
+  await page.getByLabel('Token contract address').fill('0x2222222222222222222222222222222222222222')
+  await page.getByRole('button', { name: '查询 Token' }).click()
+
+  await expect(page.getByTestId('token-error')).toContainText('未检测到合约字节码')
+  await expect(page.getByTestId('token-compatibility')).toHaveCount(0)
 })
