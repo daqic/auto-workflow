@@ -1,6 +1,6 @@
-import { inject, type InjectionKey } from 'vue'
+import { inject, onScopeDispose, shallowRef, type InjectionKey } from 'vue'
 
-import type { EthereumTool } from './ethereum-tool'
+import type { EthereumTool, EthereumToolSnapshot } from './ethereum-tool'
 
 export const ethereumToolKey: InjectionKey<EthereumTool> = Symbol('EthereumTool')
 
@@ -12,4 +12,14 @@ export function useEthereumTool(): EthereumTool {
   }
 
   return tool
+}
+
+export function useEthereumToolSnapshot(tool: EthereumTool) {
+  const snapshot = shallowRef<EthereumToolSnapshot>(tool.read())
+  const unsubscribe = tool.subscribe((nextSnapshot) => {
+    snapshot.value = nextSnapshot
+  })
+
+  onScopeDispose(unsubscribe)
+  return snapshot
 }

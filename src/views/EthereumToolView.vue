@@ -1,13 +1,12 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, shallowRef } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 
 import AccountSessionHeader from '@/components/AccountSessionHeader.vue'
-import { useEthereumTool } from '@/ethereum/vue-ethereum-tool'
+import { useEthereumTool, useEthereumToolSnapshot } from '@/ethereum/vue-ethereum-tool'
 
 const ethereumTool = useEthereumTool()
-const snapshot = shallowRef(ethereumTool.read())
+const snapshot = useEthereumToolSnapshot(ethereumTool)
 const rpcUrlDraft = ref('')
-let unsubscribe: (() => void) | undefined
 
 const NETWORK_STATUS_PRESENTATION = {
   connected: {
@@ -41,13 +40,8 @@ async function applyRpcOverride() {
 }
 
 onMounted(() => {
-  unsubscribe = ethereumTool.subscribe((nextSnapshot) => {
-    snapshot.value = nextSnapshot
-  })
   void ethereumTool.network.initialize()
 })
-
-onBeforeUnmount(() => unsubscribe?.())
 </script>
 
 <template>

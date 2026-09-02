@@ -1,13 +1,12 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef } from 'vue'
+import { computed, nextTick, ref } from 'vue'
 
-import { useEthereumTool } from '@/ethereum/vue-ethereum-tool'
+import { useEthereumTool, useEthereumToolSnapshot } from '@/ethereum/vue-ethereum-tool'
 
 const ethereumTool = useEthereumTool()
-const snapshot = shallowRef(ethereumTool.read())
+const snapshot = useEthereumToolSnapshot(ethereumTool)
 const privateKeyInput = ref<HTMLInputElement | null>(null)
 const isPrivateKeyVisible = ref(false)
-let unsubscribe: (() => void) | undefined
 
 const ACCOUNT_STATUS_LABEL = {
   'balance-error': '余额读取错误',
@@ -47,14 +46,6 @@ async function startAccountReplacement() {
 async function refreshAccountBalance() {
   await ethereumTool.account.refreshBalance()
 }
-
-onMounted(() => {
-  unsubscribe = ethereumTool.subscribe((nextSnapshot) => {
-    snapshot.value = nextSnapshot
-  })
-})
-
-onBeforeUnmount(() => unsubscribe?.())
 </script>
 
 <template>
