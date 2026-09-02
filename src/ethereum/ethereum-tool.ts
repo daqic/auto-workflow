@@ -37,6 +37,8 @@ const CANDIDATE_UNREACHABLE_PROBLEM = Object.freeze({
 
 interface NetworkSnapshot {
   readonly activeRpcUrl: string
+  readonly canApplyRpcOverride: boolean
+  readonly canReconnect: boolean
   readonly canUseChainActions: boolean
   readonly chainId: number | null
   readonly connectionError: NetworkProblem | null
@@ -44,6 +46,11 @@ interface NetworkSnapshot {
   readonly rpcOverrideError: NetworkProblem | null
   readonly status: NetworkStatus
 }
+
+type NetworkState = Omit<
+  NetworkSnapshot,
+  'canApplyRpcOverride' | 'canReconnect' | 'canUseChainActions'
+>
 
 export interface EthereumToolSnapshot {
   readonly network: NetworkSnapshot
@@ -59,43 +66,72 @@ export interface EthereumTool {
   }
 }
 
-function freezeSnapshot(network: NetworkSnapshot): EthereumToolSnapshot {
-  return Object.freeze({ network: Object.freeze(network) })
+type SepoliaProbeResult =
+  | { readonly kind: 'valid'; readonly chainId: typeof SEPOLIA_CHAIN_ID }
+  | { readonly kind: 'unreachable' }
+  | { readonly kind: 'wrong-chain' }
+
+function freezeSnapshot(network: NetworkState): EthereumToolSnapshot {
+  const isNetworkBusy = network.status === 'connecting' || network.isValidatingRpc
+
+  return Object.freeze({
+    network: Object.freeze({
+      ...network,
+      canApplyRpcOverride: !isNetworkBusy,
+      canReconnect:
+        !isNetworkBusy && (network.status === 'connected' || network.status === 'error'),
+      canUseChainActions: network.status === 'connected' && network.chainId === SEPOLIA_CHAIN_ID,
+    }),
+  })
 }
 
 export function createEthereumTool({ rpc }: { rpc: SepoliaRpcAdapter }): EthereumTool {
-  let snapshot = freezeSnapshot({
+  let networkState: NetworkState = {
     activeRpcUrl: DEFAULT_SEPOLIA_RPC_URL,
-    canUseChainActions: false,
     chainId: null,
     connectionError: null,
     isValidatingRpc: false,
     rpcOverrideError: null,
     status: 'idle',
-  })
+  }
+  let snapshot = freezeSnapshot(networkState)
   const listeners = new Set<(snapshot: EthereumToolSnapshot) => void>()
 
-  function publish(network: NetworkSnapshot) {
-    snapshot = freezeSnapshot(network)
+  function publish(networkPatch: Partial<NetworkState>) {
+    networkState = { ...networkState, ...networkPatch }
+    snapshot = freezeSnapshot(networkState)
     listeners.forEach((listener) => listener(snapshot))
   }
 
+  async function probeSepolia(rpcUrl: string): Promise<SepoliaProbeResult> {
+    try {
+      const chainId = await rpc.getChainId(rpcUrl)
+
+      if (chainId !== SEPOLIA_CHAIN_ID) {
+        return { kind: 'wrong-chain' }
+      }
+
+      return { kind: 'valid', chainId: SEPOLIA_CHAIN_ID }
+    } catch {
+      return { kind: 'unreachable' }
+    }
+  }
+
   async function initialize() {
+    if (networkState.status === 'connecting' || networkState.isValidatingRpc) {
+      return
+    }
+
     publish({
-      ...snapshot.network,
-      canUseChainActions: false,
       chainId: null,
       connectionError: null,
       status: 'connecting',
     })
 
-    let chainId: number
+    const result = await probeSepolia(networkState.activeRpcUrl)
 
-    try {
-      chainId = await rpc.getChainId(snapshot.network.activeRpcUrl)
-    } catch {
+    if (result.kind === 'unreachable') {
       publish({
-        ...snapshot.network,
         chainId: null,
         connectionError: UNREACHABLE_PROBLEM,
         status: 'error',
@@ -103,9 +139,8 @@ export function createEthereumTool({ rpc }: { rpc: SepoliaRpcAdapter }): Ethereu
       return
     }
 
-    if (chainId !== SEPOLIA_CHAIN_ID) {
+    if (result.kind === 'wrong-chain') {
       publish({
-        ...snapshot.network,
         chainId: null,
         connectionError: WRONG_CHAIN_PROBLEM,
         status: 'error',
@@ -114,15 +149,17 @@ export function createEthereumTool({ rpc }: { rpc: SepoliaRpcAdapter }): Ethereu
     }
 
     publish({
-      ...snapshot.network,
-      canUseChainActions: true,
-      chainId,
+      chainId: result.chainId,
       connectionError: null,
       status: 'connected',
     })
   }
 
   async function applyRpcOverride(candidateRpcUrl: string) {
+    if (networkState.status === 'connecting' || networkState.isValidatingRpc) {
+      return false
+    }
+
     let normalizedRpcUrl: string
 
     try {
@@ -135,7 +172,6 @@ export function createEthereumTool({ rpc }: { rpc: SepoliaRpcAdapter }): Ethereu
       normalizedRpcUrl = url.toString()
     } catch {
       publish({
-        ...snapshot.network,
         isValidatingRpc: false,
         rpcOverrideError: INVALID_RPC_URL_PROBLEM,
       })
@@ -143,27 +179,22 @@ export function createEthereumTool({ rpc }: { rpc: SepoliaRpcAdapter }): Ethereu
     }
 
     publish({
-      ...snapshot.network,
       isValidatingRpc: true,
       rpcOverrideError: null,
     })
 
-    let chainId: number
+    const result = await probeSepolia(normalizedRpcUrl)
 
-    try {
-      chainId = await rpc.getChainId(normalizedRpcUrl)
-    } catch {
+    if (result.kind === 'unreachable') {
       publish({
-        ...snapshot.network,
         isValidatingRpc: false,
         rpcOverrideError: CANDIDATE_UNREACHABLE_PROBLEM,
       })
       return false
     }
 
-    if (chainId !== SEPOLIA_CHAIN_ID) {
+    if (result.kind === 'wrong-chain') {
       publish({
-        ...snapshot.network,
         isValidatingRpc: false,
         rpcOverrideError: CANDIDATE_WRONG_CHAIN_PROBLEM,
       })
@@ -171,10 +202,8 @@ export function createEthereumTool({ rpc }: { rpc: SepoliaRpcAdapter }): Ethereu
     }
 
     publish({
-      ...snapshot.network,
       activeRpcUrl: normalizedRpcUrl,
-      canUseChainActions: true,
-      chainId,
+      chainId: result.chainId,
       connectionError: null,
       isValidatingRpc: false,
       status: 'connected',

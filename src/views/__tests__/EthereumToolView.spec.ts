@@ -7,7 +7,7 @@ import { createScriptedSepoliaRpcAdapter } from '@/ethereum/testing/scripted-sep
 import { ethereumToolKey } from '@/ethereum/vue-ethereum-tool'
 import EthereumToolView from '@/views/EthereumToolView.vue'
 
-describe('App network status', () => {
+describe('EthereumToolView network status', () => {
   it('shows the active Sepolia connection after startup validation succeeds', async () => {
     const tool = createEthereumTool({
       rpc: createScriptedSepoliaRpcAdapter([{ chainId: 11_155_111 }]),

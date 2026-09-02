@@ -8,30 +8,28 @@ const snapshot = shallowRef(ethereumTool.read())
 const rpcUrlDraft = ref('')
 let unsubscribe: (() => void) | undefined
 
-const networkStatusLabel = computed(() => {
-  switch (snapshot.value.network.status) {
-    case 'connected':
-      return '已连接'
-    case 'error':
-      return '连接失败'
-    case 'connecting':
-      return '正在连接'
-    default:
-      return '等待连接'
-  }
-})
+const NETWORK_STATUS_PRESENTATION = {
+  connected: {
+    description: 'RPC 已验证为 Ethereum Sepolia，链上操作已启用。',
+    label: '已连接',
+  },
+  connecting: {
+    description: '正在验证 RPC 返回的 chain ID。',
+    label: '正在连接',
+  },
+  error: {
+    description: '应用仍可使用。请重新连接，或验证一个临时 RPC。',
+    label: '连接失败',
+  },
+  idle: {
+    description: '正在验证 RPC 返回的 chain ID。',
+    label: '等待连接',
+  },
+} as const
 
-const statusDescription = computed(() => {
-  if (snapshot.value.network.status === 'connected') {
-    return 'RPC 已验证为 Ethereum Sepolia，链上操作已启用。'
-  }
-
-  if (snapshot.value.network.status === 'error') {
-    return '应用仍可使用。请重新连接，或验证一个临时 RPC。'
-  }
-
-  return '正在验证 RPC 返回的 chain ID。'
-})
+const networkStatusPresentation = computed(
+  () => NETWORK_STATUS_PRESENTATION[snapshot.value.network.status],
+)
 
 async function reconnect() {
   await ethereumTool.network.reconnect()
@@ -84,11 +82,11 @@ onBeforeUnmount(() => unsubscribe?.())
             aria-live="polite"
           >
             <span class="status-dot" aria-hidden="true"></span>
-            {{ networkStatusLabel }}
+            {{ networkStatusPresentation.label }}
           </span>
         </div>
 
-        <p class="status-description">{{ statusDescription }}</p>
+        <p class="status-description">{{ networkStatusPresentation.description }}</p>
 
         <div v-if="snapshot.network.connectionError" class="error-banner" role="alert">
           <span class="error-icon" aria-hidden="true">!</span>
@@ -118,7 +116,7 @@ onBeforeUnmount(() => unsubscribe?.())
             class="button button--secondary"
             name="reconnect"
             type="button"
-            :disabled="snapshot.network.status === 'connecting'"
+            :disabled="!snapshot.network.canReconnect"
             @click="reconnect"
           >
             {{ snapshot.network.status === 'connecting' ? '正在连接…' : '重新连接' }}
@@ -153,9 +151,7 @@ onBeforeUnmount(() => unsubscribe?.())
                 <button
                   class="button button--primary"
                   type="submit"
-                  :disabled="
-                    snapshot.network.isValidatingRpc || snapshot.network.status === 'connecting'
-                  "
+                  :disabled="!snapshot.network.canApplyRpcOverride"
                 >
                   {{ snapshot.network.isValidatingRpc ? '正在验证…' : '验证并应用' }}
                 </button>

@@ -19,6 +19,8 @@ describe('EthereumTool network', () => {
     expect(tool.read()).toEqual({
       network: {
         activeRpcUrl: DEFAULT_SEPOLIA_RPC_URL,
+        canApplyRpcOverride: true,
+        canReconnect: true,
         canUseChainActions: true,
         chainId: 11_155_111,
         connectionError: null,
@@ -200,6 +202,35 @@ describe('EthereumTool network', () => {
       chainId: null,
       connectionError: { kind: 'wrong-chain' },
       status: 'error',
+    })
+  })
+
+  it('does not let reconnect race with an in-progress RPC override', async () => {
+    const candidateRpcUrl = 'https://working-sepolia.example/rpc'
+    const rpc = createScriptedSepoliaRpcAdapter([
+      { chainId: 11_155_111 },
+      { chainId: 11_155_111 },
+      { error: new Error('stale reconnect result') },
+    ])
+    const tool = createEthereumTool({ rpc })
+
+    await tool.network.initialize()
+
+    const override = tool.network.applyRpcOverride(candidateRpcUrl)
+    expect(tool.read().network).toMatchObject({
+      canApplyRpcOverride: false,
+      canReconnect: false,
+      isValidatingRpc: true,
+    })
+    const reconnect = tool.network.reconnect()
+
+    await Promise.all([override, reconnect])
+
+    expect(tool.read().network).toMatchObject({
+      activeRpcUrl: candidateRpcUrl,
+      canUseChainActions: true,
+      connectionError: null,
+      status: 'connected',
     })
   })
 })
