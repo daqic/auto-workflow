@@ -3,6 +3,7 @@ import { computed, onMounted, ref } from 'vue'
 
 import AccountSessionHeader from '@/components/AccountSessionHeader.vue'
 import TokenInspector from '@/components/TokenInspector.vue'
+import TokenTransfer from '@/components/TokenTransfer.vue'
 import { useEthereumTool, useEthereumToolSnapshot } from '@/ethereum/vue-ethereum-tool'
 
 const ethereumTool = useEthereumTool()
@@ -172,6 +173,7 @@ onMounted(() => {
       </section>
 
       <TokenInspector />
+      <TokenTransfer />
 
       <aside class="safety-note" aria-labelledby="safety-heading">
         <span class="safety-mark" aria-hidden="true">i</span>

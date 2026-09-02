@@ -4,6 +4,7 @@ import { generatePrivateKey, privateKeyToAccount } from 'viem/accounts'
 import { flushPromises, mount } from '@vue/test-utils'
 
 import { createEthereumTool } from '@/ethereum/ethereum-tool'
+import type { PreparedTokenTransfer } from '@/ethereum/sepolia-rpc-adapter'
 import { createScriptedSepoliaRpcAdapter } from '@/ethereum/testing/scripted-sepolia-rpc-adapter'
 import { ethereumToolKey } from '@/ethereum/vue-ethereum-tool'
 import EthereumToolView from '@/views/EthereumToolView.vue'
@@ -227,5 +228,82 @@ describe('EthereumToolView Token Inspector', () => {
 
     expect(wrapper.get('[data-testid="token-error"]').text()).toContain('未检测到合约字节码')
     expect(wrapper.find('[data-testid="token-compatibility"]').exists()).toBe(false)
+  })
+})
+
+describe('EthereumToolView Token Transfer', () => {
+  it('uses Max and keeps a confirmed transfer locked until a new transfer starts', async () => {
+    const tokenAddress = '0x1111111111111111111111111111111111111111'
+    const recipient = '0x52908400098527886e0f7030069857d2e4169ee7'
+    const checksumRecipient = '0x52908400098527886E0F7030069857D2E4169EE7'
+    const preparedTransaction: PreparedTokenTransfer = {
+      chainId: 11_155_111,
+      data: '0xa9059cbb',
+      gas: 50_000n,
+      maxFeePerGas: 2_000_000_000n,
+      maxPriorityFeePerGas: 1_000_000_000n,
+      nonce: 0,
+      to: tokenAddress,
+      type: 'eip1559',
+      value: 0n,
+    }
+    const tool = createEthereumTool({
+      rpc: createScriptedSepoliaRpcAdapter(
+        [{ chainId: 11_155_111 }],
+        [{ balance: 1_000_000_000_000_000_000n }, { balance: 750_000_000_000_000_000n }],
+        {
+          bytecodes: [{ bytecode: '0x6000' }],
+          preparedTransfers: [{ transaction: preparedTransaction }],
+          tokenBalances: [{ balance: 1_500_000n }, { balance: 0n }],
+          tokenDecimals: [{ decimals: 6 }],
+          tokenNames: [{ name: 'Demo USD' }],
+          tokenSymbols: [{ symbol: 'DUSD' }],
+          transactionReceipts: [{ confirmations: 1, status: 'success' }],
+          transferSimulations: [{ result: true }],
+        },
+      ),
+    })
+    const wrapper = mount(EthereumToolView, {
+      global: {
+        provide: {
+          [ethereumToolKey]: tool,
+        },
+      },
+    })
+    await flushPromises()
+    await tool.account.importPrivateKey(generatePrivateKey())
+    await tool.token.inspect(tokenAddress)
+    await flushPromises()
+
+    await wrapper.get('button[name="transfer-max"]').trigger('click')
+    expect(wrapper.get<HTMLInputElement>('input[name="transfer-amount"]').element.value).toBe('1.5')
+    await wrapper.get('input[name="transfer-recipient"]').setValue(recipient)
+    await wrapper.get('form[data-testid="token-transfer-form"]').trigger('submit')
+    await flushPromises()
+
+    const transactionLink = wrapper.get('[data-testid="transaction-hash"]')
+    expect(transactionLink.text()).toMatch(/^0x[0-9a-f]{64}$/)
+    expect(transactionLink.attributes()).toMatchObject({
+      href: `https://sepolia.etherscan.io/tx/${transactionLink.text()}`,
+      rel: 'noopener noreferrer',
+      target: '_blank',
+    })
+    expect(wrapper.get('[data-testid="transfer-status"]').text()).toContain('执行成功')
+    expect(wrapper.get<HTMLInputElement>('input[name="transfer-amount"]').element.value).toBe('')
+    expect(wrapper.get<HTMLInputElement>('input[name="transfer-recipient"]').element.value).toBe(
+      checksumRecipient,
+    )
+    expect(
+      wrapper.get('button[type="submit"][name="submit-transfer"]').attributes(),
+    ).toHaveProperty('disabled')
+
+    await wrapper.get('button[name="new-transfer"]').trigger('click')
+    expect(wrapper.find('[data-testid="transaction-hash"]').exists()).toBe(false)
+    expect(wrapper.get<HTMLInputElement>('input[name="transfer-recipient"]').element.value).toBe(
+      checksumRecipient,
+    )
+    expect(
+      wrapper.get('button[type="submit"][name="submit-transfer"]').attributes(),
+    ).not.toHaveProperty('disabled')
   })
 })

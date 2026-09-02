@@ -1,4 +1,13 @@
-import { formatEther, formatUnits, getAddress, type Hex } from 'viem'
+import {
+  formatEther,
+  formatUnits,
+  getAddress,
+  keccak256,
+  parseUnits,
+  zeroAddress,
+  type Hex,
+  type TransactionSerializable,
+} from 'viem'
 import { privateKeyToAccount, type PrivateKeyAccount } from 'viem/accounts'
 
 import type { SepoliaRpcAdapter } from './sepolia-rpc-adapter'
@@ -10,6 +19,8 @@ type NetworkStatus = 'idle' | 'connecting' | 'connected' | 'error'
 type AccountStatus =
   'locked' | 'importing' | 'loading-balance' | 'connected' | 'import-error' | 'balance-error'
 type TokenStatus = 'idle' | 'inspecting' | 'compatible' | 'error'
+type TransferStatus =
+  'editing' | 'checking' | 'signing' | 'submitting' | 'confirming' | 'success' | 'broadcast-error'
 
 interface NetworkProblem {
   readonly kind: 'unreachable' | 'wrong-chain' | 'invalid-url'
@@ -92,6 +103,30 @@ interface TokenSnapshot {
   readonly symbol: string | null
 }
 
+interface TransferProblem {
+  readonly kind:
+    | 'invalid-recipient'
+    | 'zero-recipient'
+    | 'self-recipient'
+    | 'invalid-amount'
+    | 'amount-exceeds-balance'
+    | 'simulation-failed'
+    | 'preparation-failed'
+    | 'insufficient-eth'
+    | 'signing-failed'
+    | 'broadcast-failed'
+    | 'confirmation-failed'
+  readonly message: string
+}
+
+interface TransferSnapshot {
+  readonly canSubmit: boolean
+  readonly error: TransferProblem | null
+  readonly hash: Hex | null
+  readonly recipient: `0x${string}` | null
+  readonly status: TransferStatus
+}
+
 type NetworkState = Omit<
   NetworkSnapshot,
   'canApplyRpcOverride' | 'canReconnect' | 'canUseChainActions'
@@ -101,6 +136,7 @@ export interface EthereumToolSnapshot {
   readonly account: AccountSnapshot
   readonly network: NetworkSnapshot
   readonly token: TokenSnapshot
+  readonly transfer: TransferSnapshot
 }
 
 export interface EthereumTool {
@@ -119,6 +155,10 @@ export interface EthereumTool {
   readonly token: {
     inspect(tokenAddress: string): Promise<boolean>
   }
+  readonly transfer: {
+    startNew(): void
+    submit(input: { readonly amount: string; readonly recipient: string }): Promise<boolean>
+  }
 }
 
 type SepoliaProbeResult =
@@ -128,6 +168,7 @@ type SepoliaProbeResult =
 
 type AccountState = Omit<AccountSnapshot, 'canImport' | 'canLock' | 'canRefreshBalance'>
 type TokenState = Omit<TokenSnapshot, 'canInspect' | 'canTransfer'>
+type TransferState = Omit<TransferSnapshot, 'canSubmit'>
 
 const INVALID_PRIVATE_KEY_PROBLEM = Object.freeze({
   kind: 'invalid-private-key' as const,
@@ -179,39 +220,122 @@ const TOKEN_BALANCE_UNAVAILABLE_PROBLEM = Object.freeze({
   message: '无法读取当前账户的 Token 余额，Token 暂不可转账。',
 })
 
+const INVALID_TRANSFER_RECIPIENT_PROBLEM = Object.freeze({
+  kind: 'invalid-recipient' as const,
+  message: '请输入有效的 Ethereum 收款地址。',
+})
+
+const SELF_TRANSFER_RECIPIENT_PROBLEM = Object.freeze({
+  kind: 'self-recipient' as const,
+  message: '收款地址不能是当前专用测试账户地址。',
+})
+
+const ZERO_TRANSFER_RECIPIENT_PROBLEM = Object.freeze({
+  kind: 'zero-recipient' as const,
+  message: '收款地址不能是零地址。',
+})
+
+const INVALID_TRANSFER_AMOUNT_PROBLEM = Object.freeze({
+  kind: 'invalid-amount' as const,
+  message: '展示金额必须是大于 0 的普通十进制，不支持负数或科学计数法。',
+})
+
+const TRANSFER_AMOUNT_EXCEEDS_BALANCE_PROBLEM = Object.freeze({
+  kind: 'amount-exceeds-balance' as const,
+  message: '展示金额超过当前可读 Token 余额。',
+})
+
+const TRANSFER_SIMULATION_FAILED_PROBLEM = Object.freeze({
+  kind: 'simulation-failed' as const,
+  message: 'Token transfer 模拟未返回 true，已在签名前停止。',
+})
+
+const TRANSFER_PREPARATION_FAILED_PROBLEM = Object.freeze({
+  kind: 'preparation-failed' as const,
+  message: '无法准备 Token 转账，已在签名前停止。',
+})
+
+const INSUFFICIENT_ETH_PROBLEM = Object.freeze({
+  kind: 'insufficient-eth' as const,
+  message: 'Sepolia ETH 余额不足以支付预计的交易费用。',
+})
+
+const TRANSFER_SIGNING_FAILED_PROBLEM = Object.freeze({
+  kind: 'signing-failed' as const,
+  message: '无法在浏览器内完成本地签名。',
+})
+
+const TRANSFER_BROADCAST_FAILED_PROBLEM = Object.freeze({
+  kind: 'broadcast-failed' as const,
+  message: 'RPC 未明确接受已签名交易，不能创建或签名另一笔转账。',
+})
+
+const TRANSFER_CONFIRMATION_FAILED_PROBLEM = Object.freeze({
+  kind: 'confirmation-failed' as const,
+  message: '尚未取得成功回执和一次确认，不能标记为执行成功。',
+})
+
+function calculateMaximumTransactionCost(transaction: TransactionSerializable): bigint | null {
+  const gasPrice = transaction.maxFeePerGas ?? transaction.gasPrice
+
+  if (transaction.gas === undefined || gasPrice === undefined) {
+    return null
+  }
+
+  return transaction.gas * gasPrice + (transaction.value ?? 0n)
+}
+
 function freezeSnapshot(
   network: NetworkState,
   account: AccountState,
   token: TokenState,
+  transfer: TransferState,
 ): EthereumToolSnapshot {
   const isNetworkBusy = network.status === 'connecting' || network.isValidatingRpc
   const canUseChainActions = network.status === 'connected' && network.chainId === SEPOLIA_CHAIN_ID
   const isAccountBusy = account.status === 'importing' || account.status === 'loading-balance'
   const hasActiveAccount = account.address !== null
   const isTokenBusy = token.status === 'inspecting'
+  const isTransferInFlight =
+    transfer.status === 'checking' ||
+    transfer.status === 'signing' ||
+    transfer.status === 'submitting' ||
+    transfer.status === 'confirming'
 
   return Object.freeze({
     account: Object.freeze({
       ...account,
-      canImport: canUseChainActions && !isAccountBusy,
-      canLock: hasActiveAccount,
-      canRefreshBalance: canUseChainActions && hasActiveAccount && !isAccountBusy,
+      canImport: canUseChainActions && !isAccountBusy && !isTransferInFlight,
+      canLock: hasActiveAccount && !isTransferInFlight,
+      canRefreshBalance:
+        canUseChainActions && hasActiveAccount && !isAccountBusy && !isTransferInFlight,
     }),
     network: Object.freeze({
       ...network,
-      canApplyRpcOverride: !isNetworkBusy,
+      canApplyRpcOverride: !isNetworkBusy && !isTransferInFlight,
       canReconnect:
-        !isNetworkBusy && (network.status === 'connected' || network.status === 'error'),
+        !isNetworkBusy &&
+        !isTransferInFlight &&
+        (network.status === 'connected' || network.status === 'error'),
       canUseChainActions,
     }),
     token: Object.freeze({
       ...token,
-      canInspect: canUseChainActions && !isTokenBusy,
+      canInspect: canUseChainActions && !isTokenBusy && !isTransferInFlight,
       canTransfer:
         canUseChainActions &&
         hasActiveAccount &&
         token.status === 'compatible' &&
         token.balance !== null,
+    }),
+    transfer: Object.freeze({
+      ...transfer,
+      canSubmit:
+        canUseChainActions &&
+        hasActiveAccount &&
+        token.status === 'compatible' &&
+        token.balance !== null &&
+        transfer.status === 'editing',
     }),
   })
 }
@@ -244,14 +368,22 @@ export function createEthereumTool({ rpc }: { rpc: SepoliaRpcAdapter }): Ethereu
     status: 'idle',
     symbol: null,
   }
+  let transferState: TransferState = {
+    error: null,
+    hash: null,
+    recipient: null,
+    status: 'editing',
+  }
   let localAccount: PrivateKeyAccount | undefined
+  let ethBalanceMinimumUnits: bigint | null = null
+  let tokenBalanceMinimumUnits: bigint | null = null
   let accountOperationId = 0
   let tokenOperationId = 0
-  let snapshot = freezeSnapshot(networkState, accountState, tokenState)
+  let snapshot = freezeSnapshot(networkState, accountState, tokenState, transferState)
   const listeners = new Set<(snapshot: EthereumToolSnapshot) => void>()
 
   function notify() {
-    snapshot = freezeSnapshot(networkState, accountState, tokenState)
+    snapshot = freezeSnapshot(networkState, accountState, tokenState, transferState)
     listeners.forEach((listener) => listener(snapshot))
   }
 
@@ -267,6 +399,11 @@ export function createEthereumTool({ rpc }: { rpc: SepoliaRpcAdapter }): Ethereu
 
   function publishToken(tokenPatch: Partial<TokenState>) {
     tokenState = { ...tokenState, ...tokenPatch }
+    notify()
+  }
+
+  function publishTransfer(transferPatch: Partial<TransferState>) {
+    transferState = { ...transferState, ...transferPatch }
     notify()
   }
 
@@ -398,12 +535,14 @@ export function createEthereumTool({ rpc }: { rpc: SepoliaRpcAdapter }): Ethereu
         ethBalance: formatEther(balance),
         status: 'connected',
       })
+      ethBalanceMinimumUnits = balance
       return true
     } catch {
       if (operationId !== accountOperationId || localAccount !== account) {
         return false
       }
 
+      ethBalanceMinimumUnits = null
       publishAccount({
         error: BALANCE_UNAVAILABLE_PROBLEM,
         ethBalance: null,
@@ -415,6 +554,7 @@ export function createEthereumTool({ rpc }: { rpc: SepoliaRpcAdapter }): Ethereu
 
   function cancelAccountBoundTokenOperation() {
     tokenOperationId += 1
+    tokenBalanceMinimumUnits = null
 
     if (tokenState.address && tokenState.decimals !== null) {
       publishToken({ balance: null, error: null, status: 'compatible' })
@@ -437,6 +577,8 @@ export function createEthereumTool({ rpc }: { rpc: SepoliaRpcAdapter }): Ethereu
   async function importPrivateKey(privateKey: string) {
     const operationId = ++accountOperationId
     localAccount = undefined
+    ethBalanceMinimumUnits = null
+    publishTransfer({ error: null, hash: null, recipient: null, status: 'editing' })
     cancelAccountBoundTokenOperation()
     publishAccount({
       address: null,
@@ -500,6 +642,8 @@ export function createEthereumTool({ rpc }: { rpc: SepoliaRpcAdapter }): Ethereu
     accountOperationId += 1
     cancelAccountBoundTokenOperation()
     localAccount = undefined
+    ethBalanceMinimumUnits = null
+    publishTransfer({ error: null, hash: null, recipient: null, status: 'editing' })
     publishAccount({
       address: null,
       error: null,
@@ -555,12 +699,14 @@ export function createEthereumTool({ rpc }: { rpc: SepoliaRpcAdapter }): Ethereu
         error: null,
         status: 'compatible',
       })
+      tokenBalanceMinimumUnits = balance
       return true
     } catch {
       if (operationId !== tokenOperationId || localAccount !== account) {
         return false
       }
 
+      tokenBalanceMinimumUnits = null
       publishToken({
         balance: null,
         error: TOKEN_BALANCE_UNAVAILABLE_PROBLEM,
@@ -572,6 +718,8 @@ export function createEthereumTool({ rpc }: { rpc: SepoliaRpcAdapter }): Ethereu
 
   async function inspectToken(tokenAddress: string) {
     const operationId = ++tokenOperationId
+    tokenBalanceMinimumUnits = null
+    publishTransfer({ error: null, hash: null, recipient: null, status: 'editing' })
     publishToken({
       address: null,
       balance: null,
@@ -671,6 +819,185 @@ export function createEthereumTool({ rpc }: { rpc: SepoliaRpcAdapter }): Ethereu
     return true
   }
 
+  async function submitTransfer({ amount, recipient }: { amount: string; recipient: string }) {
+    if (!snapshot.transfer.canSubmit || !localAccount) {
+      return false
+    }
+
+    let normalizedRecipient: `0x${string}`
+
+    try {
+      normalizedRecipient = getAddress(recipient.trim())
+    } catch {
+      publishTransfer({ error: INVALID_TRANSFER_RECIPIENT_PROBLEM })
+      return false
+    }
+
+    if (normalizedRecipient === localAccount.address) {
+      publishTransfer({ error: SELF_TRANSFER_RECIPIENT_PROBLEM })
+      return false
+    }
+
+    if (normalizedRecipient === zeroAddress) {
+      publishTransfer({ error: ZERO_TRANSFER_RECIPIENT_PROBLEM })
+      return false
+    }
+
+    const normalizedAmount = amount.trim()
+    const decimalMatch = /^(?:0|[1-9]\d*)(?:\.(\d+))?$/.exec(normalizedAmount)
+
+    if (!decimalMatch || tokenState.decimals === null || tokenState.balance === null) {
+      publishTransfer({ error: INVALID_TRANSFER_AMOUNT_PROBLEM })
+      return false
+    }
+
+    const decimalPlaces = decimalMatch[1]?.length ?? 0
+
+    if (decimalPlaces > tokenState.decimals) {
+      publishTransfer({
+        error: Object.freeze({
+          kind: 'invalid-amount' as const,
+          message: `展示金额最多支持当前 Token 的 ${tokenState.decimals} 位小数。`,
+        }),
+      })
+      return false
+    }
+
+    const minimumUnitAmount = parseUnits(normalizedAmount, tokenState.decimals)
+
+    if (minimumUnitAmount <= 0n) {
+      publishTransfer({ error: INVALID_TRANSFER_AMOUNT_PROBLEM })
+      return false
+    }
+
+    if (
+      tokenBalanceMinimumUnits === null ||
+      minimumUnitAmount > tokenBalanceMinimumUnits ||
+      minimumUnitAmount > parseUnits(tokenState.balance, tokenState.decimals)
+    ) {
+      publishTransfer({ error: TRANSFER_AMOUNT_EXCEEDS_BALANCE_PROBLEM })
+      return false
+    }
+
+    const account = localAccount
+    const tokenAddress = tokenState.address
+
+    if (!tokenAddress) {
+      return false
+    }
+
+    const transferRequest = {
+      accountAddress: account.address,
+      amount: minimumUnitAmount,
+      recipient: normalizedRecipient,
+      tokenAddress,
+    }
+    publishTransfer({
+      error: null,
+      hash: null,
+      recipient: normalizedRecipient,
+      status: 'checking',
+    })
+
+    let simulationPassed: boolean
+
+    try {
+      simulationPassed = await rpc.simulateTokenTransfer(networkState.activeRpcUrl, transferRequest)
+    } catch {
+      simulationPassed = false
+    }
+
+    if (!simulationPassed) {
+      publishTransfer({ error: TRANSFER_SIMULATION_FAILED_PROBLEM, status: 'editing' })
+      return false
+    }
+
+    let preparedTransaction: TransactionSerializable
+
+    try {
+      preparedTransaction = await rpc.prepareTokenTransfer(
+        networkState.activeRpcUrl,
+        transferRequest,
+      )
+    } catch {
+      publishTransfer({ error: TRANSFER_PREPARATION_FAILED_PROBLEM, status: 'editing' })
+      return false
+    }
+
+    const maximumTransactionCost = calculateMaximumTransactionCost(preparedTransaction)
+
+    if (
+      maximumTransactionCost === null ||
+      ethBalanceMinimumUnits === null ||
+      maximumTransactionCost > ethBalanceMinimumUnits
+    ) {
+      publishTransfer({ error: INSUFFICIENT_ETH_PROBLEM, status: 'editing' })
+      return false
+    }
+
+    publishTransfer({ status: 'signing' })
+
+    let signedTransaction: Hex
+
+    try {
+      signedTransaction = await account.signTransaction(preparedTransaction)
+    } catch {
+      publishTransfer({ error: TRANSFER_SIGNING_FAILED_PROBLEM, status: 'editing' })
+      return false
+    }
+
+    const localTransactionHash = keccak256(signedTransaction)
+    publishTransfer({ status: 'submitting' })
+
+    let submittedHash: Hex
+
+    try {
+      submittedHash = await rpc.sendRawTransaction(networkState.activeRpcUrl, signedTransaction)
+    } catch {
+      publishTransfer({
+        error: TRANSFER_BROADCAST_FAILED_PROBLEM,
+        hash: localTransactionHash,
+        status: 'broadcast-error',
+      })
+      return false
+    }
+
+    if (submittedHash.toLowerCase() !== localTransactionHash.toLowerCase()) {
+      publishTransfer({
+        error: TRANSFER_BROADCAST_FAILED_PROBLEM,
+        hash: localTransactionHash,
+        status: 'broadcast-error',
+      })
+      return false
+    }
+
+    publishTransfer({ hash: submittedHash, status: 'confirming' })
+
+    try {
+      const receipt = await rpc.waitForTransactionReceipt(networkState.activeRpcUrl, submittedHash)
+
+      if (receipt.status !== 'success' || receipt.confirmations < 1) {
+        publishTransfer({ error: TRANSFER_CONFIRMATION_FAILED_PROBLEM })
+        return false
+      }
+    } catch {
+      publishTransfer({ error: TRANSFER_CONFIRMATION_FAILED_PROBLEM })
+      return false
+    }
+
+    publishTransfer({ error: null, status: 'success' })
+    await refreshBalance()
+    return true
+  }
+
+  function startNewTransfer() {
+    if (transferState.status !== 'success') {
+      return
+    }
+
+    publishTransfer({ error: null, hash: null, status: 'editing' })
+  }
+
   return {
     read: () => snapshot,
     subscribe(listener) {
@@ -689,6 +1016,10 @@ export function createEthereumTool({ rpc }: { rpc: SepoliaRpcAdapter }): Ethereu
     },
     token: {
       inspect: inspectToken,
+    },
+    transfer: {
+      startNew: startNewTransfer,
+      submit: submitTransfer,
     },
   }
 }

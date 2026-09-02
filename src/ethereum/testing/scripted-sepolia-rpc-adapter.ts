@@ -1,5 +1,6 @@
 import type { SepoliaRpcAdapter } from '../sepolia-rpc-adapter'
-import type { Hex } from 'viem'
+import type { PreparedTokenTransfer } from '../sepolia-rpc-adapter'
+import { keccak256, type Hex } from 'viem'
 
 interface ChainIdResponse {
   readonly chainId: number
@@ -33,12 +34,28 @@ interface TokenSymbolResponse {
   readonly symbol: string
 }
 
+interface TransferSimulationResponse {
+  readonly result: boolean
+}
+
+interface PreparedTransferResponse {
+  readonly transaction: PreparedTokenTransfer
+}
+
+interface TransactionReceiptResponse {
+  readonly confirmations: number
+  readonly status: 'success' | 'reverted'
+}
+
 interface TokenResponses {
   readonly bytecodes?: readonly (BytecodeResponse | ErrorResponse)[]
   readonly tokenBalances?: readonly (TokenBalanceResponse | ErrorResponse)[]
   readonly tokenDecimals?: readonly (TokenDecimalsResponse | ErrorResponse)[]
   readonly tokenNames?: readonly (TokenNameResponse | ErrorResponse)[]
   readonly tokenSymbols?: readonly (TokenSymbolResponse | ErrorResponse)[]
+  readonly transferSimulations?: readonly (TransferSimulationResponse | ErrorResponse)[]
+  readonly preparedTransfers?: readonly (PreparedTransferResponse | ErrorResponse)[]
+  readonly transactionReceipts?: readonly (TransactionReceiptResponse | ErrorResponse)[]
 }
 
 export function createScriptedSepoliaRpcAdapter(
@@ -53,6 +70,9 @@ export function createScriptedSepoliaRpcAdapter(
   const remainingTokenDecimalsResponses = [...(tokenResponses.tokenDecimals ?? [])]
   const remainingTokenNameResponses = [...(tokenResponses.tokenNames ?? [])]
   const remainingTokenSymbolResponses = [...(tokenResponses.tokenSymbols ?? [])]
+  const remainingTransferSimulationResponses = [...(tokenResponses.transferSimulations ?? [])]
+  const remainingPreparedTransferResponses = [...(tokenResponses.preparedTransfers ?? [])]
+  const remainingTransactionReceiptResponses = [...(tokenResponses.transactionReceipts ?? [])]
 
   function takeResponse<T extends object>(queue: Array<T | ErrorResponse>): T {
     const response = queue.shift()
@@ -89,6 +109,18 @@ export function createScriptedSepoliaRpcAdapter(
     },
     async getTokenSymbol() {
       return takeResponse(remainingTokenSymbolResponses).symbol
+    },
+    async prepareTokenTransfer() {
+      return takeResponse(remainingPreparedTransferResponses).transaction
+    },
+    async sendRawTransaction(_rpcUrl, signedTransaction) {
+      return keccak256(signedTransaction)
+    },
+    async simulateTokenTransfer() {
+      return takeResponse(remainingTransferSimulationResponses).result
+    },
+    async waitForTransactionReceipt() {
+      return takeResponse(remainingTransactionReceiptResponses)
     },
   }
 }
