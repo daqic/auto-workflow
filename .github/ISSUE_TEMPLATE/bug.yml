@@ -1,0 +1,106 @@
+name: Bug report
+description: 提交可以继续澄清和复现的问题
+title: '[Bug] '
+labels:
+  - bug
+  - needs-triage
+body:
+  - type: markdown
+    attributes:
+      value: |
+        不要求报告人先定位根因。请提供当前已知事实；AI 会继续整理，但缺少可复现信息时不会进入无人值守修复。
+
+  - type: textarea
+    id: original-report
+    attributes:
+      label: 原始报告
+      description: 保留最初的问题描述、Jira 内容或用户反馈原文。
+    validations:
+      required: true
+
+  - type: textarea
+    id: source
+    attributes:
+      label: Jira Case 或其他来源
+      description: 填写 Jira key、链接、附件版本或报告时间；没有外部来源时写“不适用”。
+    validations:
+      required: true
+
+  - type: textarea
+    id: impact
+    attributes:
+      label: 影响与发生频率
+      description: 写明受影响用户、严重程度，以及每次、偶发或未知。
+    validations:
+      required: true
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: 环境
+      description: 环境、版本/commit、URL/路由、浏览器、系统、设备、视口、角色、权限和功能开关。
+    validations:
+      required: true
+
+  - type: textarea
+    id: preconditions
+    attributes:
+      label: 前置数据与状态
+      description: 说明账号、数据、缓存或其他复现前提；没有时写“无”。
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: 最小复现步骤
+      placeholder: |
+        1. 打开……
+        2. 点击……
+        3. 观察……
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: 实际结果
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: 期望结果
+    validations:
+      required: true
+
+  - type: textarea
+    id: evidence
+    attributes:
+      label: 证据
+      description: 附上脱敏后的截图、录屏、完整错误、Console/Network、日志或 Playwright trace。
+
+  - type: textarea
+    id: regression
+    attributes:
+      label: 修复后必须保护的行为
+      description: 说明回归测试应该证明什么，以及哪些现有行为不能被破坏。
+    validations:
+      required: true
+
+  - type: textarea
+    id: design-reference
+    attributes:
+      label: 设计来源（视觉或交互问题适用）
+      description: 填写准确的 Axure/Penpot/Figma 页面与版本，或现有页面/组件引用。
+
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: 提交前确认
+      options:
+        - label: 日志、截图和附件已经移除 Token、Cookie、个人信息和未授权内部数据。
+          required: true
+        - label: 实际结果与期望结果来自事实或明确来源，不是 AI 猜测。
+          required: true

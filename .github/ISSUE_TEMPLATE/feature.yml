@@ -1,0 +1,134 @@
+name: Feature request
+description: 提交新功能、行为调整或 UI 需求
+title: '[Feature] '
+labels:
+  - enhancement
+  - needs-triage
+body:
+  - type: markdown
+    attributes:
+      value: |
+        可以先提交不完整的原始输入。AI 会负责整理和发现缺口；在规格与设计获批前，任务不会进入 `ready-for-agent`。
+
+  - type: textarea
+    id: original-input
+    attributes:
+      label: 原始输入
+      description: 保留报告人的原始文字，不要只留下 AI 改写后的版本。
+      placeholder: 我希望……
+    validations:
+      required: true
+
+  - type: dropdown
+    id: source-type
+    attributes:
+      label: 需求来源
+      options:
+        - 文字描述或聊天
+        - Jira Case
+        - Confluence 文档
+        - Axure 原型
+        - Penpot / Figma UI
+        - 多个来源组合
+    validations:
+      required: true
+
+  - type: textarea
+    id: source-references
+    attributes:
+      label: 来源链接与版本
+      description: 填写 Jira key、Confluence 页面与版本、Axure revision、Penpot/Figma 页面或版本；没有外部来源时写“不适用”。
+      placeholder: |
+        - Jira：PROJECT-123
+        - Confluence：<page link + version/update time>
+        - Penpot：<file + page/object + version>
+    validations:
+      required: true
+
+  - type: textarea
+    id: outcome
+    attributes:
+      label: 用户问题与期望结果
+      description: 说明谁遇到了什么问题，以及完成后用户能得到什么结果。
+    validations:
+      required: true
+
+  - type: textarea
+    id: scope
+    attributes:
+      label: 范围内
+      description: 列出本次必须交付的行为、页面、数据或流程。
+    validations:
+      required: true
+
+  - type: textarea
+    id: out-of-scope
+    attributes:
+      label: 范围外
+      description: 明确容易被误解为本次内容、但确定不实现的事项。
+    validations:
+      required: true
+
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: 验收标准
+      description: 使用可以观察或测试的清单，不写“效果良好”等主观结论。
+      placeholder: |
+        - [ ] 当……时，用户可以……
+        - [ ] 如果……，页面显示……
+    validations:
+      required: true
+
+  - type: dropdown
+    id: ui-change
+    attributes:
+      label: 是否涉及 UI 或交互
+      options:
+        - 是
+        - 否
+        - 尚不确定
+    validations:
+      required: true
+
+  - type: textarea
+    id: ui-sources
+    attributes:
+      label: UI 设计依据（适用时）
+      description: 分别写明交互、布局、主题的精确来源；需要 AI 设计时，记录 Penpot 候选与最终批准版本。
+      placeholder: |
+        - 交互：
+        - 布局：
+        - 主题：
+
+  - type: textarea
+    id: ui-details
+    attributes:
+      label: UI 状态与验收尺寸（适用时）
+      description: 写明桌面/移动端视口、加载/空/错误/禁用/成功状态、文案、资源和无障碍要求。
+
+  - type: textarea
+    id: dependencies
+    attributes:
+      label: 依赖、阻塞与风险
+      description: 列出接口、权限、其他任务、外部服务或尚未确定的高影响问题；没有时写“无”。
+    validations:
+      required: true
+
+  - type: textarea
+    id: verification
+    attributes:
+      label: 预期验证方式
+      description: 说明需要的单元/组件/E2E、浏览器路径、设计对比或其他证据。
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: 提交前确认
+      options:
+        - label: 内容不包含 Token、Cookie、客户数据或未授权的公司内部信息。
+          required: true
+        - label: 我没有把沉默或 AI 推测当成人工批准。
+          required: true
