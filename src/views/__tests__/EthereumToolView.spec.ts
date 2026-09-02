@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
+import { keccak256, type Hex } from 'viem'
 import { generatePrivateKey, privateKeyToAccount } from 'viem/accounts'
 
 import { flushPromises, mount } from '@vue/test-utils'
@@ -374,5 +375,94 @@ describe('EthereumToolView Token Transfer', () => {
       rel: 'noopener noreferrer',
       target: '_blank',
     })
+  })
+
+  it('shows explicit ambiguous-broadcast recovery and warns before discarding it', async () => {
+    const tokenAddress = '0x1111111111111111111111111111111111111111'
+    const recipient = '0x2222222222222222222222222222222222222222'
+    const submittedPayloads: Hex[] = []
+    const preparedTransaction: PreparedTokenTransfer = {
+      chainId: 11_155_111,
+      data: '0xa9059cbb',
+      gas: 50_000n,
+      maxFeePerGas: 2_000_000_000n,
+      maxPriorityFeePerGas: 1_000_000_000n,
+      nonce: 0,
+      to: tokenAddress,
+      type: 'eip1559',
+      value: 0n,
+    }
+    const rpc = {
+      ...createScriptedSepoliaRpcAdapter(
+        [{ chainId: 11_155_111 }],
+        [{ balance: 1_000_000_000_000_000_000n }],
+        {
+          bytecodes: [{ bytecode: '0x6000' }],
+          preparedTransfers: [{ transaction: preparedTransaction }],
+          tokenBalances: [{ balance: 1_500_000n }],
+          tokenDecimals: [{ decimals: 6 }],
+          tokenNames: [{ name: 'Demo USD' }],
+          tokenSymbols: [{ symbol: 'DUSD' }],
+          transferSimulations: [{ result: true }],
+        },
+      ),
+      async getTransactionStatus() {
+        return null
+      },
+      async sendRawTransaction(_rpcUrl: string, signedTransaction: Hex) {
+        submittedPayloads.push(signedTransaction)
+
+        if (submittedPayloads.length === 1) {
+          throw new Error('ambiguous provider failure')
+        }
+
+        return keccak256(signedTransaction)
+      },
+    }
+    const tool = createEthereumTool({ rpc })
+    const wrapper = mount(EthereumToolView, {
+      global: {
+        provide: {
+          [ethereumToolKey]: tool,
+        },
+      },
+    })
+    await flushPromises()
+    await tool.account.importPrivateKey(generatePrivateKey())
+    await tool.token.inspect(tokenAddress)
+    await flushPromises()
+
+    await wrapper.get('input[name="transfer-recipient"]').setValue(recipient)
+    await wrapper.get('input[name="transfer-amount"]').setValue('1')
+    await wrapper.get('form[data-testid="token-transfer-form"]').trigger('submit')
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="transfer-recovery-warning"]').text()).toContain(
+      '交易可能已经到达网络',
+    )
+    expect(wrapper.get('button[name="submit-transfer"]').attributes()).toHaveProperty('disabled')
+    expect(wrapper.find('button[name="query-transfer-status"]').exists()).toBe(true)
+    expect(wrapper.get('button[name="replay-transfer"]').text()).toContain('重播原交易')
+
+    const beforeUnloadEvent = new Event('beforeunload', { cancelable: true })
+    window.dispatchEvent(beforeUnloadEvent)
+    expect(beforeUnloadEvent.defaultPrevented).toBe(true)
+
+    await wrapper.get('button[name="replay-transfer"]').trigger('click')
+    await flushPromises()
+    expect(submittedPayloads).toHaveLength(2)
+    expect(submittedPayloads[1]).toBe(submittedPayloads[0])
+
+    const confirmDiscard = vi.spyOn(window, 'confirm').mockReturnValueOnce(false)
+    await wrapper.get('button[name="lock-account"]').trigger('click')
+    expect(tool.read().account.address).not.toBeNull()
+    expect(confirmDiscard).toHaveBeenCalledWith(expect.stringContaining('恢复材料将丢失'))
+
+    confirmDiscard.mockReturnValueOnce(true)
+    await wrapper.get('button[name="lock-account"]').trigger('click')
+    expect(tool.read().account.address).toBeNull()
+    expect(tool.read().transfer.requiresRecovery).toBe(false)
+    confirmDiscard.mockRestore()
+    wrapper.unmount()
   })
 })

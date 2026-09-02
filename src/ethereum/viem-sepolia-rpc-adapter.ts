@@ -1,5 +1,6 @@
 import {
   InvalidInputRpcError,
+  TransactionNotFoundError,
   TransactionReceiptNotFoundError,
   TransactionRejectedRpcError,
   WaitForTransactionReceiptTimeoutError,
@@ -69,11 +70,22 @@ export function createViemSepoliaRpcAdapter(): SepoliaRpcAdapter {
       })
     },
     async getTransactionStatus(rpcUrl, transactionHash) {
+      const client = createClient(rpcUrl)
+
       try {
-        const receipt = await createClient(rpcUrl).getTransactionReceipt({ hash: transactionHash })
+        const receipt = await client.getTransactionReceipt({ hash: transactionHash })
         return { confirmations: 1, status: receipt.status }
       } catch (error) {
-        if (error instanceof TransactionReceiptNotFoundError) {
+        if (!(error instanceof TransactionReceiptNotFoundError)) {
+          throw error
+        }
+      }
+
+      try {
+        await client.getTransaction({ hash: transactionHash })
+        return { status: 'pending' }
+      } catch (error) {
+        if (error instanceof TransactionNotFoundError) {
           return null
         }
 

@@ -16,6 +16,7 @@ const TRANSFER_STATUS_LABELS = {
   editing: '等待提交',
   failed: '执行失败',
   querying: '正在查询原交易',
+  replaying: '正在重播原交易',
   signing: '本地签名中',
   submitting: '提交中',
   success: '执行成功',
@@ -33,6 +34,10 @@ const transactionHashLabel = computed(() => {
   }
 
   if (snapshot.value.transfer.status === 'unknown') {
+    return '原交易哈希'
+  }
+
+  if (snapshot.value.transfer.requiresRecovery) {
     return '原交易哈希'
   }
 
@@ -78,6 +83,10 @@ async function submitTransfer() {
 
 async function queryTransferStatus() {
   await ethereumTool.transfer.queryStatus()
+}
+
+async function replayTransfer() {
+  await ethereumTool.transfer.replay()
 }
 
 function startNewTransfer() {
@@ -232,6 +241,15 @@ watch(
         获取测试 ETH；应用不会直接调用 faucet。
       </p>
 
+      <p
+        v-if="snapshot.transfer.requiresRecovery"
+        class="transfer-recovery"
+        data-testid="transfer-recovery-warning"
+        role="status"
+      >
+        该交易可能已经到达网络。恢复完成前不能编辑或提交新转账；只能查询原交易，或由你明确触发重播完全相同的已签名交易。锁定、刷新或关闭页面会永久丢失当前页面内的恢复材料。
+      </p>
+
       <div v-if="snapshot.transfer.hash" class="transfer-result">
         <span>{{ transactionHashLabel }}</span>
         <a
@@ -263,6 +281,16 @@ watch(
           @click="queryTransferStatus"
         >
           {{ snapshot.transfer.status === 'querying' ? '正在查询…' : '查询原交易' }}
+        </button>
+        <button
+          v-if="snapshot.transfer.requiresRecovery"
+          class="button button--secondary"
+          name="replay-transfer"
+          type="button"
+          :disabled="!snapshot.transfer.canReplay"
+          @click="replayTransfer"
+        >
+          {{ snapshot.transfer.status === 'replaying' ? '正在重播…' : '重播原交易' }}
         </button>
         <button
           class="button button--primary"

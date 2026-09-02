@@ -118,7 +118,7 @@ export function createScriptedSepoliaRpcAdapter(
     },
     async getTransactionStatus() {
       const response = takeResponse(remainingTransactionReceiptResponses)
-      return 'pending' in response ? null : response
+      return 'pending' in response ? { status: 'pending' as const } : response
     },
     async prepareTokenTransfer() {
       return takeResponse(remainingPreparedTransferResponses).transaction

@@ -65,7 +65,7 @@ function readRpcCallData(route: Route): string | null {
 type TransferReceiptStatus = 'reverted' | 'success'
 
 interface TransferRpcScenario {
-  readonly broadcast?: 'accept' | 'reject'
+  readonly broadcast?: 'accept' | 'ambiguous-once' | 'reject'
   readonly simulation: 'empty' | 'true'
   readonly initialReceipt: TransferReceiptStatus | null
 }
@@ -78,8 +78,11 @@ async function installTransferRpcScenario(page: Page, scenario: TransferRpcScena
   let ethBalanceReads = 0
   let tokenBalanceReads = 0
   let rawTransactionSubmissions = 0
+  let transactionCountReads = 0
   let submittedHash = `0x${'0'.repeat(64)}`
   let receiptStatus = scenario.initialReceipt
+  const submittedPayloads: string[] = []
+  const queriedHashes: string[] = []
 
   await page.route(`${defaultRpcUrl}/**`, async (route) => {
     const body = readRpcBody(route)
@@ -177,6 +180,7 @@ async function installTransferRpcScenario(page: Page, scenario: TransferRpcScena
     }
 
     if (method === 'eth_getTransactionCount') {
+      transactionCountReads += 1
       await fulfillRpcResult(route, '0x0')
       return
     }
@@ -225,8 +229,14 @@ async function installTransferRpcScenario(page: Page, scenario: TransferRpcScena
 
     if (method === 'eth_sendRawTransaction') {
       const signedTransaction = typeof params[0] === 'string' ? params[0] : '0x'
+      submittedPayloads.push(signedTransaction)
       submittedHash = keccak256(signedTransaction)
       rawTransactionSubmissions += 1
+
+      if (scenario.broadcast === 'ambiguous-once' && rawTransactionSubmissions === 1) {
+        await route.abort('failed')
+        return
+      }
 
       if (scenario.broadcast === 'reject') {
         await fulfillRpcError(route, -32_000, 'insufficient funds for gas * price + value')
@@ -243,6 +253,9 @@ async function installTransferRpcScenario(page: Page, scenario: TransferRpcScena
     }
 
     if (method === 'eth_getTransactionReceipt') {
+      const transactionHash = typeof params[0] === 'string' ? params[0] : ''
+      queriedHashes.push(transactionHash)
+
       if (!receiptStatus) {
         await fulfillRpcResult(route, null)
         return
@@ -276,8 +289,11 @@ async function installTransferRpcScenario(page: Page, scenario: TransferRpcScena
     setReceiptStatus(status: TransferReceiptStatus | null) {
       receiptStatus = status
     },
+    queriedHashes: () => [...queriedHashes],
+    submittedPayloads: () => [...submittedPayloads],
     submittedHash: () => submittedHash,
     submissionCount: () => rawTransactionSubmissions,
+    transactionCountReads: () => transactionCountReads,
     tokenAddress,
   }
 }
@@ -894,4 +910,52 @@ test('times out after 120 seconds and manually queries the same transaction hash
     `https://sepolia.etherscan.io/tx/${originalHash}`,
   )
   expect(scenario.submissionCount()).toBe(1)
+})
+
+test('recovers an ambiguous broadcast by querying and explicitly replaying the same bytes', async ({
+  page,
+}) => {
+  const scenario = await installTransferRpcScenario(page, {
+    broadcast: 'ambiguous-once',
+    initialReceipt: null,
+    simulation: 'true',
+  })
+  await openTransferForm(page, scenario)
+
+  await page.getByRole('button', { name: '检查并提交' }).click()
+
+  await expect(page.getByTestId('transfer-status')).toHaveText('广播状态不明确')
+  await expect(page.getByTestId('transfer-error')).toContainText('可能已到达网络')
+  await expect(page.getByTestId('transfer-recovery-warning')).toContainText(
+    '恢复完成前不能编辑或提交新转账',
+  )
+  const originalHash = scenario.submittedHash()
+  await expect(page.getByTestId('transaction-hash')).toHaveAttribute(
+    'href',
+    `https://sepolia.etherscan.io/tx/${originalHash}`,
+  )
+  await expect(page.locator('button[name="submit-transfer"]')).toBeDisabled()
+  await expect(page.getByRole('button', { name: '新建转账' })).toHaveCount(0)
+
+  const beforeUnloadPrevented = await page.evaluate(() => {
+    const event = new Event('beforeunload', { cancelable: true })
+    window.dispatchEvent(event)
+    return event.defaultPrevented
+  })
+  expect(beforeUnloadPrevented).toBe(true)
+
+  await page.getByRole('button', { name: '查询原交易' }).click()
+  await expect(page.getByTestId('transfer-status')).toHaveText('广播状态不明确')
+  expect(scenario.submissionCount()).toBe(1)
+
+  scenario.setReceiptStatus('success')
+  await page.getByRole('button', { name: '重播原交易' }).click()
+  await expect(page.getByTestId('transfer-status')).toHaveText('执行成功')
+
+  const submittedPayloads = scenario.submittedPayloads()
+  expect(submittedPayloads).toHaveLength(2)
+  expect(submittedPayloads[1]).toBe(submittedPayloads[0])
+  expect(scenario.queriedHashes()).toEqual([originalHash, originalHash])
+  expect(scenario.transactionCountReads()).toBe(1)
+  expect(scenario.submissionCount()).toBe(2)
 })

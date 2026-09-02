@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 
 import AccountSessionHeader from '@/components/AccountSessionHeader.vue'
 import TokenInspector from '@/components/TokenInspector.vue'
@@ -41,8 +41,22 @@ async function applyRpcOverride() {
   await ethereumTool.network.applyRpcOverride(rpcUrlDraft.value)
 }
 
+function warnBeforeUnload(event: BeforeUnloadEvent) {
+  if (!snapshot.value.transfer.requiresRecovery) {
+    return
+  }
+
+  event.preventDefault()
+  event.returnValue = ''
+}
+
 onMounted(() => {
+  window.addEventListener('beforeunload', warnBeforeUnload)
   void ethereumTool.network.initialize()
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('beforeunload', warnBeforeUnload)
 })
 </script>
 

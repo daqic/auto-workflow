@@ -1061,20 +1061,34 @@ describe('EthereumTool Token Transfer', () => {
 
     expect(await tool.transfer.submit({ amount: '1', recipient })).toBe(false)
     expect(tool.read().transfer).toMatchObject({
+      canReplay: true,
       canSubmit: false,
       error: {
         kind: 'broadcast-uncertain',
         message: expect.stringContaining('交易可能已到达网络'),
       },
       hash: expect.stringMatching(/^0x[0-9a-f]{64}$/),
+      requiresRecovery: true,
       status: 'broadcast-error',
     })
 
     expect(await tool.token.inspect('0x3333333333333333333333333333333333333333')).toBe(false)
     expect(tool.read().account).toMatchObject({ address: accountAddress, canLock: true })
-    tool.account.lock()
+    expect(tool.account.lock()).toBe(false)
+    expect(tool.read().account.address).toBe(accountAddress)
+    expect(tool.read().transfer).toMatchObject({
+      hash: expect.stringMatching(/^0x[0-9a-f]{64}$/),
+      requiresRecovery: true,
+      status: 'broadcast-error',
+    })
+
+    expect(tool.account.lock({ discardUnresolvedTransaction: true })).toBe(true)
     expect(tool.read().account.address).toBeNull()
-    expect(tool.read().transfer).toMatchObject({ hash: null, status: 'editing' })
+    expect(tool.read().transfer).toMatchObject({
+      hash: null,
+      requiresRecovery: false,
+      status: 'editing',
+    })
   })
 
   it('queries the original ambiguous hash and unlocks new work after a successful receipt', async () => {
@@ -1123,6 +1137,118 @@ describe('EthereumTool Token Transfer', () => {
 
     tool.transfer.startNew()
     expect(tool.read().transfer).toMatchObject({ canSubmit: true, hash: null, status: 'editing' })
+  })
+
+  it('keeps recovery attached to the original hash while that transaction is pending', async () => {
+    let queryCount = 0
+    const rpc = {
+      ...createScriptedSepoliaRpcAdapter(
+        [{ chainId: 11_155_111 }],
+        [{ balance: 1_000_000_000_000_000_000n }],
+        {
+          bytecodes: [{ bytecode: '0x6000' }],
+          preparedTransfers: [{ transaction: preparedTransaction }],
+          tokenBalances: [{ balance: 1_000_000n }],
+          tokenDecimals: [{ decimals: 6 }],
+          tokenNames: [{ name: 'Demo USD' }],
+          tokenSymbols: [{ symbol: 'DUSD' }],
+          transferSimulations: [{ result: true }],
+        },
+      ),
+      async getTransactionStatus() {
+        queryCount += 1
+        return { status: 'pending' as const }
+      },
+      async sendRawTransaction() {
+        throw new Error('ambiguous provider failure')
+      },
+    }
+    const tool = createEthereumTool({ rpc })
+    await tool.network.initialize()
+    await tool.account.importPrivateKey(generatePrivateKey())
+    await tool.token.inspect(tokenAddress)
+
+    expect(await tool.transfer.submit({ amount: '1', recipient })).toBe(false)
+    const originalHash = tool.read().transfer.hash
+    expect(await tool.transfer.queryStatus()).toBe(false)
+    expect(queryCount).toBe(1)
+    expect(tool.read().transfer).toMatchObject({
+      canQueryStatus: true,
+      canReplay: true,
+      error: null,
+      hash: originalHash,
+      requiresRecovery: true,
+      status: 'confirming',
+    })
+  })
+
+  it('replays the exact signed bytes without simulating, preparing, or signing a replacement', async () => {
+    const submittedPayloads: Hex[] = []
+    const queriedHashes: Hex[] = []
+    const transferStages: string[] = []
+    let simulationCount = 0
+    let preparationCount = 0
+    const rpc = {
+      ...createScriptedSepoliaRpcAdapter(
+        [{ chainId: 11_155_111 }],
+        [{ balance: 1_000_000_000_000_000_000n }, { balance: 750_000_000_000_000_000n }],
+        {
+          bytecodes: [{ bytecode: '0x6000' }],
+          tokenBalances: [{ balance: 1_000_000n }, { balance: 500_000n }],
+          tokenDecimals: [{ decimals: 6 }],
+          tokenNames: [{ name: 'Demo USD' }],
+          tokenSymbols: [{ symbol: 'DUSD' }],
+        },
+      ),
+      async getTransactionStatus(_rpcUrl: string, transactionHash: Hex) {
+        queriedHashes.push(transactionHash)
+        return { confirmations: 1, status: 'success' as const }
+      },
+      async prepareTokenTransfer() {
+        preparationCount += 1
+        return preparedTransaction
+      },
+      async sendRawTransaction(_rpcUrl: string, signedTransaction: Hex) {
+        submittedPayloads.push(signedTransaction)
+
+        if (submittedPayloads.length === 1) {
+          throw new Error('ambiguous provider failure')
+        }
+
+        return keccak256(signedTransaction)
+      },
+      async simulateTokenTransfer() {
+        simulationCount += 1
+        return true
+      },
+    }
+    const tool = createEthereumTool({ rpc })
+    await tool.network.initialize()
+    await tool.account.importPrivateKey(generatePrivateKey())
+    await tool.token.inspect(tokenAddress)
+
+    expect(await tool.transfer.submit({ amount: '1', recipient })).toBe(false)
+    const originalHash = tool.read().transfer.hash
+    const unsubscribe = tool.subscribe(({ transfer }) => transferStages.push(transfer.status))
+
+    expect(await tool.transfer.replay()).toBe(true)
+    unsubscribe()
+
+    expect(submittedPayloads).toHaveLength(2)
+    expect(submittedPayloads[1]).toBe(submittedPayloads[0])
+    expect(keccak256(submittedPayloads[1] ?? '0x')).toBe(originalHash)
+    expect(queriedHashes).toEqual([originalHash])
+    expect(simulationCount).toBe(1)
+    expect(preparationCount).toBe(1)
+    expect(transferStages).not.toContain('checking')
+    expect(transferStages).not.toContain('signing')
+    expect(tool.read().transfer).toMatchObject({
+      canSubmit: false,
+      error: null,
+      hash: originalHash,
+      status: 'success',
+    })
+    expect(JSON.stringify(tool.read())).not.toContain(submittedPayloads[0])
   })
 
   it('reports a reverted receipt as an execution failure and retains the submitted hash', async () => {

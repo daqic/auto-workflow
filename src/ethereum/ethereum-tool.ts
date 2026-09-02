@@ -13,6 +13,7 @@ import { privateKeyToAccount, type PrivateKeyAccount } from 'viem/accounts'
 import {
   RawTransactionRejectedError,
   type ObservedTransactionReceipt,
+  type ObservedTransactionStatus,
   type SepoliaRpcAdapter,
 } from './sepolia-rpc-adapter'
 
@@ -31,6 +32,7 @@ type TransferStatus =
   | 'submitting'
   | 'confirming'
   | 'querying'
+  | 'replaying'
   | 'success'
   | 'failed'
   | 'unknown'
@@ -82,6 +84,12 @@ const TRANSFER_STATUS_CAPABILITIES: Record<TransferStatus, TransferStatusCapabil
     statusQueryVisible: false,
   },
   querying: {
+    canQueryStatus: false,
+    canStartNew: false,
+    interactionLocked: true,
+    statusQueryVisible: true,
+  },
+  replaying: {
     canQueryStatus: false,
     canStartNew: false,
     interactionLocked: true,
@@ -219,6 +227,7 @@ interface TransferProblem {
 
 interface TransferSnapshot {
   readonly canQueryStatus: boolean
+  readonly canReplay: boolean
   readonly canStartNew: boolean
   readonly canSubmit: boolean
   readonly error: TransferProblem | null
@@ -226,6 +235,7 @@ interface TransferSnapshot {
   readonly isFormVisible: boolean
   readonly isStatusQueryVisible: boolean
   readonly recipient: `0x${string}` | null
+  readonly requiresRecovery: boolean
   readonly status: TransferStatus
   readonly unavailableReason: string | null
 }
@@ -252,7 +262,7 @@ export interface EthereumTool {
   }
   readonly account: {
     importPrivateKey(privateKey: string): Promise<boolean>
-    lock(): void
+    lock(options?: { readonly discardUnresolvedTransaction?: boolean }): boolean
     refreshBalance(): Promise<boolean>
   }
   readonly token: {
@@ -260,6 +270,7 @@ export interface EthereumTool {
   }
   readonly transfer: {
     queryStatus(): Promise<boolean>
+    replay(): Promise<boolean>
     startNew(): void
     submit(input: { readonly amount: string; readonly recipient: string }): Promise<boolean>
   }
@@ -275,10 +286,12 @@ type TokenState = Omit<TokenSnapshot, 'canInspect' | 'canTransfer'>
 type TransferState = Omit<
   TransferSnapshot,
   | 'canQueryStatus'
+  | 'canReplay'
   | 'canStartNew'
   | 'canSubmit'
   | 'isFormVisible'
   | 'isStatusQueryVisible'
+  | 'requiresRecovery'
   | 'unavailableReason'
 >
 
@@ -446,6 +459,7 @@ function freezeSnapshot(
   account: AccountState,
   token: TokenState,
   transfer: TransferState,
+  hasUnresolvedSignedTransaction: boolean,
 ): EthereumToolSnapshot {
   const isNetworkBusy = network.status === 'connecting' || network.isValidatingRpc
   const canUseChainActions = network.status === 'connected' && network.chainId === SEPOLIA_CHAIN_ID
@@ -454,6 +468,9 @@ function freezeSnapshot(
   const isTokenBusy = token.status === 'inspecting'
   const isTransferLocked = isTransferInteractionLocked(transfer.status)
   const transferCapabilities = TRANSFER_STATUS_CAPABILITIES[transfer.status]
+  const hasRecoveryActions =
+    hasUnresolvedSignedTransaction &&
+    (transfer.status === 'broadcast-error' || transfer.status === 'confirming')
   const isFormVisible =
     hasActiveAccount &&
     ((token.status === 'compatible' && token.balance !== null) || transfer.status !== 'editing')
@@ -475,7 +492,7 @@ function freezeSnapshot(
     account: Object.freeze({
       ...account,
       canImport: canUseChainActions && !isAccountBusy && !isTransferLocked,
-      canLock: hasActiveAccount && (!isTransferLocked || transfer.status === 'broadcast-error'),
+      canLock: hasActiveAccount && (!isTransferLocked || hasRecoveryActions),
       canRefreshBalance:
         canUseChainActions && hasActiveAccount && !isAccountBusy && !isTransferLocked,
     }),
@@ -499,7 +516,12 @@ function freezeSnapshot(
     }),
     transfer: Object.freeze({
       ...transfer,
-      canQueryStatus: transfer.hash !== null && transferCapabilities.canQueryStatus,
+      canQueryStatus:
+        transfer.hash !== null && (transferCapabilities.canQueryStatus || hasRecoveryActions),
+      canReplay:
+        hasUnresolvedSignedTransaction &&
+        transfer.hash !== null &&
+        (transfer.status === 'broadcast-error' || transfer.status === 'confirming'),
       canStartNew: transferCapabilities.canStartNew,
       canSubmit:
         canUseChainActions &&
@@ -508,7 +530,9 @@ function freezeSnapshot(
         token.balance !== null &&
         transfer.status === 'editing',
       isFormVisible,
-      isStatusQueryVisible: transfer.hash !== null && transferCapabilities.statusQueryVisible,
+      isStatusQueryVisible:
+        transfer.hash !== null && (transferCapabilities.statusQueryVisible || hasRecoveryActions),
+      requiresRecovery: hasUnresolvedSignedTransaction,
       unavailableReason,
     }),
   })
@@ -554,11 +578,23 @@ export function createEthereumTool({ rpc }: { rpc: SepoliaRpcAdapter }): Ethereu
   let tokenBalanceMinimumUnits: bigint | null = null
   let accountOperationId = 0
   let tokenOperationId = 0
-  let snapshot = freezeSnapshot(networkState, accountState, tokenState, transferState)
+  let snapshot = freezeSnapshot(
+    networkState,
+    accountState,
+    tokenState,
+    transferState,
+    unresolvedSignedTransaction !== undefined,
+  )
   const listeners = new Set<(snapshot: EthereumToolSnapshot) => void>()
 
   function notify() {
-    snapshot = freezeSnapshot(networkState, accountState, tokenState, transferState)
+    snapshot = freezeSnapshot(
+      networkState,
+      accountState,
+      tokenState,
+      transferState,
+      unresolvedSignedTransaction !== undefined,
+    )
     listeners.forEach((listener) => listener(snapshot))
   }
 
@@ -825,16 +861,19 @@ export function createEthereumTool({ rpc }: { rpc: SepoliaRpcAdapter }): Ethereu
     return operationId === accountOperationId && localAccount === nextAccount
   }
 
-  function lock() {
-    if (transferState.status === 'broadcast-error' && !unresolvedSignedTransaction) {
-      return
+  function lock(options: { readonly discardUnresolvedTransaction?: boolean } = {}) {
+    if (unresolvedSignedTransaction && options.discardUnresolvedTransaction !== true) {
+      return false
     }
 
     if (
       isTransferInteractionLocked(transferState.status) &&
-      transferState.status !== 'broadcast-error'
+      !(
+        unresolvedSignedTransaction &&
+        (transferState.status === 'broadcast-error' || transferState.status === 'confirming')
+      )
     ) {
-      return
+      return false
     }
 
     accountOperationId += 1
@@ -849,6 +888,7 @@ export function createEthereumTool({ rpc }: { rpc: SepoliaRpcAdapter }): Ethereu
       ethBalance: null,
       status: 'locked',
     })
+    return true
   }
 
   async function refreshBalancesForAccount(account: PrivateKeyAccount) {
@@ -1273,38 +1313,76 @@ export function createEthereumTool({ rpc }: { rpc: SepoliaRpcAdapter }): Ethereu
     const previousStatus = transferState.status
     const transactionHash = transferState.hash
 
-    if (!transactionHash || !TRANSFER_STATUS_CAPABILITIES[previousStatus].canQueryStatus) {
+    if (!transactionHash || !snapshot.transfer.canQueryStatus) {
       return false
     }
 
     publishTransfer({ error: null, status: 'querying' })
 
-    let receipt: ObservedTransactionReceipt | null
+    let observedStatus: ObservedTransactionStatus | null
     let receiptQueryFailed = false
 
     try {
-      receipt = await rpc.getTransactionStatus(networkState.activeRpcUrl, transactionHash)
+      observedStatus = await rpc.getTransactionStatus(networkState.activeRpcUrl, transactionHash)
     } catch {
-      receipt = null
+      observedStatus = null
       receiptQueryFailed = true
     }
 
-    if (!receipt || receipt.confirmations < 1) {
+    if (!observedStatus) {
       publishTransfer({
-        error:
-          previousStatus === 'broadcast-error'
-            ? TRANSFER_BROADCAST_UNCERTAIN_PROBLEM
-            : receiptQueryFailed
-              ? TRANSFER_CONFIRMATION_QUERY_FAILED_PROBLEM
-              : TRANSFER_CONFIRMATION_UNKNOWN_PROBLEM,
-        status: previousStatus,
+        error: unresolvedSignedTransaction
+          ? TRANSFER_BROADCAST_UNCERTAIN_PROBLEM
+          : receiptQueryFailed
+            ? TRANSFER_CONFIRMATION_QUERY_FAILED_PROBLEM
+            : TRANSFER_CONFIRMATION_UNKNOWN_PROBLEM,
+        status: unresolvedSignedTransaction ? 'broadcast-error' : previousStatus,
       })
+      return false
+    }
+
+    if (observedStatus.status === 'pending') {
+      publishTransfer({ error: null, status: 'confirming' })
+      return false
+    }
+
+    if (observedStatus.confirmations < 1) {
+      publishTransfer({ error: TRANSFER_CONFIRMATION_UNKNOWN_PROBLEM, status: previousStatus })
       return false
     }
 
     unresolvedSignedTransaction = undefined
 
-    return applyConfirmedTransferReceipt(receipt, localAccount)
+    return applyConfirmedTransferReceipt(observedStatus, localAccount)
+  }
+
+  async function replayTransfer() {
+    const signedTransaction = unresolvedSignedTransaction
+    const transactionHash = transferState.hash
+
+    if (!signedTransaction || !transactionHash || !snapshot.transfer.canReplay) {
+      return false
+    }
+
+    publishTransfer({ error: null, status: 'replaying' })
+
+    try {
+      const replayedHash = await rpc.sendRawTransaction(
+        networkState.activeRpcUrl,
+        signedTransaction,
+      )
+
+      if (replayedHash.toLowerCase() !== transactionHash.toLowerCase()) {
+        publishTransfer({ error: TRANSFER_BROADCAST_UNCERTAIN_PROBLEM, status: 'broadcast-error' })
+        return false
+      }
+    } catch {
+      publishTransfer({ error: TRANSFER_BROADCAST_UNCERTAIN_PROBLEM, status: 'broadcast-error' })
+      return false
+    }
+
+    publishTransfer({ status: 'broadcast-error' })
+    return queryTransferStatus()
   }
 
   function startNewTransfer() {
@@ -1336,6 +1414,7 @@ export function createEthereumTool({ rpc }: { rpc: SepoliaRpcAdapter }): Ethereu
     },
     transfer: {
       queryStatus: queryTransferStatus,
+      replay: replayTransfer,
       startNew: startNewTransfer,
       submit: submitTransfer,
     },

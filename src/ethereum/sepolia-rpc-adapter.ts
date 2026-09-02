@@ -19,6 +19,8 @@ export interface ObservedTransactionReceipt {
   readonly status: 'success' | 'reverted'
 }
 
+export type ObservedTransactionStatus = ObservedTransactionReceipt | { readonly status: 'pending' }
+
 export class RawTransactionRejectedError extends Error {
   constructor() {
     super('The RPC explicitly rejected the raw transaction.')
@@ -41,7 +43,7 @@ export interface SepoliaRpcAdapter {
   getTransactionStatus(
     rpcUrl: string,
     transactionHash: Hex,
-  ): Promise<ObservedTransactionReceipt | null>
+  ): Promise<ObservedTransactionStatus | null>
   prepareTokenTransfer(
     rpcUrl: string,
     request: TokenTransferRequest,

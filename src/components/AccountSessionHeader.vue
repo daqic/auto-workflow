@@ -33,12 +33,33 @@ function importAccount() {
 }
 
 function lockAccount() {
-  ethereumTool.account.lock()
-  isPrivateKeyVisible.value = false
+  const requiresDiscardConfirmation = snapshot.value.transfer.requiresRecovery
+
+  if (
+    requiresDiscardConfirmation &&
+    !window.confirm(
+      '这笔交易可能已经广播。锁定后，完全相同的已签名交易和恢复材料将丢失，且无法从本 Demo 恢复。仍要锁定吗？',
+    )
+  ) {
+    return false
+  }
+
+  const locked = ethereumTool.account.lock({
+    discardUnresolvedTransaction: requiresDiscardConfirmation,
+  })
+
+  if (locked) {
+    isPrivateKeyVisible.value = false
+  }
+
+  return locked
 }
 
 async function startAccountReplacement() {
-  lockAccount()
+  if (!lockAccount()) {
+    return
+  }
+
   await nextTick()
   privateKeyInput.value?.focus()
 }
@@ -106,6 +127,7 @@ async function refreshAccountBalance() {
           class="button button--secondary button--compact"
           name="replace-account"
           type="button"
+          :disabled="!snapshot.account.canLock"
           @click="startAccountReplacement"
         >
           导入新账户
