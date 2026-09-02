@@ -312,7 +312,7 @@ function freezeSnapshot(
     account: Object.freeze({
       ...account,
       canImport: canUseChainActions && !isAccountBusy && !isTransferLocked,
-      canLock: hasActiveAccount && !isTransferLocked,
+      canLock: hasActiveAccount && (!isTransferLocked || transfer.status === 'broadcast-error'),
       canRefreshBalance:
         canUseChainActions && hasActiveAccount && !isAccountBusy && !isTransferLocked,
     }),
@@ -382,6 +382,7 @@ export function createEthereumTool({ rpc }: { rpc: SepoliaRpcAdapter }): Ethereu
     status: 'editing',
   }
   let localAccount: PrivateKeyAccount | undefined
+  let unresolvedSignedTransaction: Hex | undefined
   let ethBalanceMinimumUnits: bigint | null = null
   let tokenBalanceMinimumUnits: bigint | null = null
   let accountOperationId = 0
@@ -658,13 +659,21 @@ export function createEthereumTool({ rpc }: { rpc: SepoliaRpcAdapter }): Ethereu
   }
 
   function lock() {
-    if (isTransferInteractionLocked(transferState.status)) {
+    if (transferState.status === 'broadcast-error' && !unresolvedSignedTransaction) {
+      return
+    }
+
+    if (
+      isTransferInteractionLocked(transferState.status) &&
+      transferState.status !== 'broadcast-error'
+    ) {
       return
     }
 
     accountOperationId += 1
     cancelAccountBoundTokenOperation()
     localAccount = undefined
+    unresolvedSignedTransaction = undefined
     ethBalanceMinimumUnits = null
     publishTransfer({ error: null, hash: null, recipient: null, status: 'editing' })
     publishAccount({
@@ -976,6 +985,7 @@ export function createEthereumTool({ rpc }: { rpc: SepoliaRpcAdapter }): Ethereu
       return false
     }
 
+    unresolvedSignedTransaction = signedTransaction
     const localTransactionHash = keccak256(signedTransaction)
     publishTransfer({ status: 'submitting' })
 
@@ -1001,6 +1011,7 @@ export function createEthereumTool({ rpc }: { rpc: SepoliaRpcAdapter }): Ethereu
       return false
     }
 
+    unresolvedSignedTransaction = undefined
     publishTransfer({ hash: submittedHash, status: 'confirming' })
 
     try {

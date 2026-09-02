@@ -911,9 +911,10 @@ describe('EthereumTool Token Transfer', () => {
     })
 
     expect(await tool.token.inspect('0x3333333333333333333333333333333333333333')).toBe(false)
+    expect(tool.read().account).toMatchObject({ address: accountAddress, canLock: true })
     tool.account.lock()
-    expect(tool.read().account.address).toBe(accountAddress)
-    expect(tool.read().transfer.status).toBe('broadcast-error')
+    expect(tool.read().account.address).toBeNull()
+    expect(tool.read().transfer).toMatchObject({ hash: null, status: 'editing' })
   })
 
   it('submits the exact minimum-unit amount and reports success only after confirmation', async () => {
