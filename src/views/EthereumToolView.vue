@@ -65,6 +65,7 @@ onBeforeUnmount(() => {
     <header
       class="topbar"
       :class="{
+        'topbar--network-error': snapshot.network.status === 'error',
         'topbar--ready':
           snapshot.account.status === 'locked' && snapshot.network.canUseChainActions,
       }"
@@ -89,7 +90,11 @@ onBeforeUnmount(() => {
         </p>
       </section>
 
-      <section class="network-card" aria-labelledby="network-heading">
+      <section
+        class="network-card"
+        :class="{ 'network-card--error': snapshot.network.status === 'error' }"
+        aria-labelledby="network-heading"
+      >
         <div class="card-heading">
           <div>
             <p class="section-kicker">NETWORK</p>
@@ -245,6 +250,10 @@ onBeforeUnmount(() => {
   height: 148px;
 }
 
+.topbar--network-error {
+  height: 173px;
+}
+
 .header-identity {
   display: flex;
   flex: none;
@@ -336,6 +345,14 @@ h1 {
   background: var(--color-surface);
 }
 
+.network-card:has(.advanced-settings[open]) {
+  height: 526px;
+}
+
+.network-card--error {
+  height: 472px;
+}
+
 .card-heading {
   display: flex;
   align-items: flex-start;
@@ -383,8 +400,12 @@ h1 {
 }
 
 .status-pill--error {
+  gap: 6px;
+  padding-right: 6px;
+  padding-left: 6px;
   color: var(--color-error-text);
   background: var(--color-error-surface);
+  white-space: nowrap;
 }
 
 .status-pill--connecting .status-dot {
@@ -401,6 +422,7 @@ h1 {
 .error-banner {
   display: flex;
   gap: 12px;
+  height: 72px;
   margin-bottom: 20px;
   padding: 14px 16px;
   border: 1px solid var(--color-error-text);
@@ -409,11 +431,16 @@ h1 {
   background: var(--color-error-surface);
 }
 
+.error-banner strong {
+  font-size: 14px;
+  line-height: 1.4;
+}
+
 .error-banner p {
   margin: 4px 0 0;
   color: var(--color-error-text);
-  font-size: 14px;
-  line-height: 1.5;
+  font-size: 13px;
+  line-height: 1.4;
 }
 
 .error-icon,
@@ -467,6 +494,10 @@ h1 {
   white-space: nowrap;
 }
 
+.network-card--error .connection-details dd {
+  color: var(--color-text-secondary);
+}
+
 .primary-actions {
   display: flex;
   justify-content: flex-end;
@@ -475,6 +506,10 @@ h1 {
 
 .primary-actions .button {
   width: 116px;
+}
+
+.network-card--error .primary-actions {
+  padding-right: 31px;
 }
 
 :global(.button) {
@@ -523,6 +558,14 @@ h1 {
   border-top: 1px solid var(--color-border);
 }
 
+.network-card--error .advanced-settings {
+  margin-top: 34px;
+}
+
+.network-card--error .advanced-settings summary {
+  padding-top: 17px;
+}
+
 .advanced-settings summary {
   display: flex;
   justify-content: space-between;
@@ -545,7 +588,7 @@ h1 {
 }
 
 .rpc-form {
-  margin-top: 20px;
+  margin-top: 25px;
 }
 
 .field label {
@@ -564,8 +607,13 @@ h1 {
 
 .field-action {
   display: grid;
-  grid-template-columns: 1fr auto;
+  grid-template-columns: 620px 154px;
   gap: 10px;
+}
+
+.field-action input:focus-visible {
+  outline-color: var(--color-focus);
+  outline-offset: 1px;
 }
 
 :global(input) {
