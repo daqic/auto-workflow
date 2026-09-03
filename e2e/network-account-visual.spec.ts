@@ -1,19 +1,7 @@
-import { expect, test, type Locator } from '@playwright/test'
+import { expect, test } from '@playwright/test'
 
 import { defaultRpcUrl, installReadyRpc } from './support/rpc'
-import { prepareVisualCapture } from './support/visual'
-
-const expectedWidth = 880
-
-async function expectRegionSize(region: Locator, height: number) {
-  await expect
-    .poll(async () => {
-      const box = await region.boundingBox()
-
-      return box ? { height: box.height, width: box.width } : null
-    })
-    .toEqual({ height, width: expectedWidth })
-}
+import { expectRegionSize, prepareVisualCapture } from './support/visual'
 
 test('matches the approved Penpot Dark Network Advanced RPC state', async ({ page }) => {
   await installReadyRpc(page)
