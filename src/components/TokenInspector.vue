@@ -129,6 +129,7 @@ async function inspectToken() {
 
 <style scoped>
 .token-card {
+  min-height: 380px;
   margin-top: 24px;
   padding: 32px;
   border: 1px solid var(--color-border);
@@ -154,15 +155,15 @@ async function inspectToken() {
 .token-heading h2 {
   margin-bottom: 0;
   font-size: 22px;
-  letter-spacing: -0.02em;
+  line-height: 1.4;
 }
 
 .token-kicker {
   margin-bottom: 6px;
   color: var(--color-text-secondary);
   font-size: 12px;
-  font-weight: 800;
-  letter-spacing: 0.12em;
+  font-weight: 700;
+  line-height: 1.4;
 }
 
 .token-network {
@@ -177,6 +178,7 @@ async function inspectToken() {
 .token-description {
   margin: 14px 0 24px;
   color: var(--color-text-secondary);
+  font-size: 14px;
   line-height: 1.6;
 }
 
@@ -215,6 +217,7 @@ async function inspectToken() {
   color: var(--color-text-secondary);
   background: var(--color-recessed);
   font-size: 13px;
+  min-height: 86px;
 }
 
 .token-placeholder strong {
@@ -256,7 +259,7 @@ async function inspectToken() {
   color: var(--color-success-text);
   background: var(--color-success-surface);
   font-size: 12px;
-  font-weight: 800;
+  font-weight: 700;
 }
 
 .token-details {
@@ -295,7 +298,7 @@ async function inspectToken() {
   overflow: hidden;
   color: var(--color-text);
   font-size: 14px;
-  font-weight: 650;
+  font-weight: 700;
   text-overflow: ellipsis;
   white-space: nowrap;
 }

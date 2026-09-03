@@ -1,50 +1,23 @@
-import { expect, test, type Locator, type Page, type Route } from '@playwright/test'
+import { expect, test, type Locator, type Page } from '@playwright/test'
 import { encodeFunctionResult, keccak256, parseAbi } from 'viem'
 import { generatePrivateKey, privateKeyToAccount } from 'viem/accounts'
 
-const defaultRpcUrl = 'https://ethereum-sepolia-rpc.publicnode.com'
+import {
+  defaultRpcUrl,
+  fulfillChainId,
+  fulfillRpcError,
+  fulfillRpcResult,
+  readRpcBody,
+  readRpcCallData,
+  readRpcMethod,
+} from './support/rpc'
+
 const tokenInspectionAbi = parseAbi([
   'function balanceOf(address account) view returns (uint256)',
   'function decimals() view returns (uint8)',
   'function name() view returns (string)',
   'function symbol() view returns (string)',
 ])
-
-function readRpcBody(route: Route): Record<string, unknown> {
-  const body: unknown = JSON.parse(route.request().postData() ?? '{}')
-
-  return typeof body === 'object' && body !== null ? body : {}
-}
-
-function readRequestId(route: Route): unknown {
-  return readRpcBody(route).id ?? null
-}
-
-async function fulfillChainId(route: Route, chainId: number) {
-  await fulfillRpcResult(route, `0x${chainId.toString(16)}`)
-}
-
-async function fulfillRpcResult(route: Route, result: unknown) {
-  await route.fulfill({
-    contentType: 'application/json',
-    body: JSON.stringify({
-      id: readRequestId(route),
-      jsonrpc: '2.0',
-      result,
-    }),
-  })
-}
-
-async function fulfillRpcError(route: Route, code: number, message: string) {
-  await route.fulfill({
-    contentType: 'application/json',
-    body: JSON.stringify({
-      error: { code, message },
-      id: readRequestId(route),
-      jsonrpc: '2.0',
-    }),
-  })
-}
 
 async function expectStatusColors(
   locator: Locator,
@@ -61,20 +34,15 @@ async function expectStatusColors(
     .toEqual(expected)
 }
 
-function readRpcMethod(route: Route): string | null {
-  const method = readRpcBody(route).method
+async function expectStackedWithoutOverlap(upper: Locator, lower: Locator) {
+  await expect
+    .poll(async () => {
+      const upperBox = await upper.boundingBox()
+      const lowerBox = await lower.boundingBox()
 
-  return typeof method === 'string' ? method : null
-}
-
-function readRpcCallData(route: Route): string | null {
-  const params = readRpcBody(route).params
-
-  if (!Array.isArray(params) || typeof params[0] !== 'object' || params[0] === null) {
-    return null
-  }
-
-  return 'data' in params[0] && typeof params[0].data === 'string' ? params[0].data : null
+      return upperBox && lowerBox ? upperBox.y + upperBox.height <= lowerBox.y : false
+    })
+    .toBe(true)
 }
 
 type TransferReceiptStatus = 'reverted' | 'success'
@@ -325,6 +293,7 @@ async function openTransferForm(
   await expect(page.getByTestId('token-balance')).toHaveText('1.5 DUSD')
   await page.getByLabel('收款地址').fill(scenario.recipient)
   await page.getByLabel('展示金额').fill('1')
+  await expectStackedWithoutOverlap(page.locator('.transfer-card'), page.locator('.safety-note'))
 }
 
 test('renders the approved Dark Theme through semantic computed styles', async ({ page }) => {
@@ -408,6 +377,7 @@ test('recovers manually and preserves the active RPC until an override validates
   expect(defaultRequests).toBe(2)
 
   await page.getByText('高级 RPC 设置').click()
+  await expectStackedWithoutOverlap(page.locator('.network-card'), page.locator('.token-card'))
   await page.getByLabel('临时 RPC 地址').fill('https://wrong-chain.example/rpc')
   await page.getByRole('button', { name: '验证并应用' }).click()
   await expect(page.getByTestId('rpc-override-error')).toContainText('已保留当前 RPC')
@@ -615,6 +585,7 @@ test('queries a compatible Token only on demand and adds its account balance aft
     `https://sepolia.etherscan.io/token/${tokenAddress}`,
   )
   await expect(page.getByTestId('token-address')).toHaveAttribute('target', '_blank')
+  await expectStackedWithoutOverlap(page.locator('.token-card'), page.locator('.transfer-card'))
 
   await page.getByLabel('专用测试账户').fill(privateKey)
   await page.getByRole('button', { name: '导入账户' }).click()

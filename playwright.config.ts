@@ -6,13 +6,17 @@ export default defineConfig({
   timeout: 30 * 1000,
   expect: {
     timeout: 5000,
+    toHaveScreenshot: {
+      animations: 'disabled',
+      pathTemplate: '{testDir}/visual-baselines/{platform}/{testFilePath}/{arg}{ext}',
+    },
   },
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,
   workers: process.env.CI ? 1 : undefined,
   reporter: process.env.CI ? [['line'], ['html', { open: 'never' }]] : [['list']],
   use: {
-    baseURL: process.env.CI ? 'http://localhost:4173' : 'http://localhost:5173',
+    baseURL: process.env.CI ? 'http://localhost:4173' : 'http://127.0.0.1:5174',
     trace: 'on-first-retry',
   },
   projects: [
@@ -20,12 +24,18 @@ export default defineConfig({
       name: 'chromium',
       use: {
         ...devices['Desktop Chrome'],
+        viewport: { width: 1280, height: 900 },
       },
     },
   ],
   webServer: {
-    command: process.env.CI ? 'corepack pnpm@10.15.0 run preview' : 'corepack pnpm@10.15.0 run dev',
-    port: process.env.CI ? 4173 : 5173,
-    reuseExistingServer: !process.env.CI,
+    command: process.env.CI
+      ? 'corepack pnpm@10.15.0 run preview'
+      : 'corepack pnpm@10.15.0 exec vite --host 127.0.0.1 --port 5174',
+    env: {
+      DISABLE_VUE_DEVTOOLS: 'true',
+    },
+    port: process.env.CI ? 4173 : 5174,
+    reuseExistingServer: false,
   },
 })
