@@ -24,7 +24,7 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: process.env.CI ? 'pnpm run preview' : 'pnpm run dev',
+    command: process.env.CI ? 'corepack pnpm@10.15.0 run preview' : 'corepack pnpm@10.15.0 run dev',
     port: process.env.CI ? 4173 : 5173,
     reuseExistingServer: !process.env.CI,
   },
