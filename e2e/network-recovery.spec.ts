@@ -1,4 +1,4 @@
-import { expect, test, type Page, type Route } from '@playwright/test'
+import { expect, test, type Locator, type Page, type Route } from '@playwright/test'
 import { encodeFunctionResult, keccak256, parseAbi } from 'viem'
 import { generatePrivateKey, privateKeyToAccount } from 'viem/accounts'
 
@@ -44,6 +44,21 @@ async function fulfillRpcError(route: Route, code: number, message: string) {
       jsonrpc: '2.0',
     }),
   })
+}
+
+async function expectStatusColors(
+  locator: Locator,
+  expected: { readonly backgroundColor: string; readonly color: string },
+) {
+  await expect
+    .poll(() =>
+      locator.evaluate((element) => {
+        const styles = getComputedStyle(element)
+
+        return { backgroundColor: styles.backgroundColor, color: styles.color }
+      }),
+    )
+    .toEqual(expected)
 }
 
 function readRpcMethod(route: Route): string | null {
@@ -311,6 +326,38 @@ async function openTransferForm(
   await page.getByLabel('收款地址').fill(scenario.recipient)
   await page.getByLabel('展示金额').fill('1')
 }
+
+test('renders the approved Dark Theme through semantic computed styles', async ({ page }) => {
+  await page.route(`${defaultRpcUrl}/**`, (route) => fulfillChainId(route, 11_155_111))
+
+  await page.goto('/')
+
+  await expect(page.getByTestId('network-status')).toContainText('已连接')
+
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const networkCard = document.querySelector<HTMLElement>('.network-card')
+        const importButton = document.querySelector<HTMLButtonElement>('button[type="submit"]')
+        const networkStatus = document.querySelector<HTMLElement>('[data-testid="network-status"]')
+
+        return {
+          action: importButton ? getComputedStyle(importButton).backgroundColor : null,
+          colorScheme: getComputedStyle(document.documentElement).colorScheme,
+          page: getComputedStyle(document.body).backgroundColor,
+          status: networkStatus ? getComputedStyle(networkStatus).backgroundColor : null,
+          surface: networkCard ? getComputedStyle(networkCard).backgroundColor : null,
+        }
+      }),
+    )
+    .toEqual({
+      action: 'rgb(37, 99, 235)',
+      colorScheme: 'dark',
+      page: 'rgb(15, 23, 42)',
+      status: 'rgb(20, 83, 45)',
+      surface: 'rgb(30, 41, 59)',
+    })
+})
 
 test('validates the default production RPC path before enabling Sepolia actions', async ({
   page,
@@ -807,6 +854,10 @@ test('submits one raw Token transfer and shows success only after a confirmed re
     form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
   })
   await expect(page.getByTestId('transfer-status')).toContainText('执行成功')
+  await expectStatusColors(page.getByTestId('transfer-status'), {
+    backgroundColor: 'rgb(20, 83, 45)',
+    color: 'rgb(134, 239, 172)',
+  })
   await expect(page.getByTestId('transaction-hash')).toHaveAttribute(
     'href',
     `https://sepolia.etherscan.io/tx/${submittedHash}`,
@@ -844,6 +895,10 @@ test('shows a reverted receipt as execution failed and retains the original hash
   await page.getByRole('button', { name: '检查并提交' }).click()
 
   await expect(page.getByTestId('transfer-status')).toHaveText('执行失败')
+  await expectStatusColors(page.getByTestId('transfer-status'), {
+    backgroundColor: 'rgb(69, 10, 10)',
+    color: 'rgb(248, 113, 113)',
+  })
   await expect(page.getByTestId('transfer-error')).toContainText('链上执行失败')
   await expect(page.getByTestId('transaction-hash')).toHaveAttribute(
     'href',
@@ -871,6 +926,10 @@ test('shows a confirmed RPC rejection as broadcast failed without retrying', asy
   await page.getByRole('button', { name: '检查并提交' }).click()
 
   await expect(page.getByTestId('transfer-status')).toHaveText('广播失败')
+  await expectStatusColors(page.getByTestId('transfer-status'), {
+    backgroundColor: 'rgb(69, 10, 10)',
+    color: 'rgb(248, 113, 113)',
+  })
   await expect(page.getByTestId('transfer-error')).toContainText('不会自动重试')
   await expect(page.getByTestId('transaction-hash')).toHaveCount(0)
   await expect(page.getByRole('button', { name: '新建转账' })).toBeEnabled()
@@ -889,9 +948,17 @@ test('times out after 120 seconds and manually queries the same transaction hash
 
   await page.getByRole('button', { name: '检查并提交' }).click()
   await expect(page.getByTestId('transfer-status')).toContainText('确认中')
+  await expectStatusColors(page.getByTestId('transfer-status'), {
+    backgroundColor: 'rgb(15, 23, 42)',
+    color: 'rgb(96, 165, 250)',
+  })
   await page.clock.fastForward(120_000)
 
   await expect(page.getByTestId('transfer-status')).toHaveText('状态未知')
+  await expectStatusColors(page.getByTestId('transfer-status'), {
+    backgroundColor: 'rgb(69, 26, 3)',
+    color: 'rgb(251, 191, 36)',
+  })
   await expect(page.getByTestId('transfer-error')).toContainText('等待 120 秒')
   const originalHash = scenario.submittedHash()
   await expect(page.getByTestId('transaction-hash')).toHaveAttribute(
@@ -925,6 +992,10 @@ test('recovers an ambiguous broadcast by querying and explicitly replaying the s
   await page.getByRole('button', { name: '检查并提交' }).click()
 
   await expect(page.getByTestId('transfer-status')).toHaveText('广播状态不明确')
+  await expectStatusColors(page.getByTestId('transfer-status'), {
+    backgroundColor: 'rgb(69, 26, 3)',
+    color: 'rgb(251, 191, 36)',
+  })
   await expect(page.getByTestId('transfer-error')).toContainText('可能已到达网络')
   await expect(page.getByTestId('transfer-recovery-warning')).toContainText(
     '恢复完成前不能编辑或提交新转账',

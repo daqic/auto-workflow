@@ -207,29 +207,6 @@ onBeforeUnmount(() => {
   box-sizing: border-box;
 }
 
-:global(html) {
-  color-scheme: light;
-  background: #f8fafc;
-}
-
-:global(body) {
-  margin: 0;
-  min-width: 1024px;
-  min-height: 100vh;
-  color: #0f172a;
-  background:
-    radial-gradient(circle at 85% -10%, rgb(219 234 254 / 72%), transparent 34rem), #f8fafc;
-  font-family:
-    Inter,
-    ui-sans-serif,
-    system-ui,
-    -apple-system,
-    BlinkMacSystemFont,
-    'Segoe UI',
-    sans-serif;
-  -webkit-font-smoothing: antialiased;
-}
-
 :global(button),
 :global(input) {
   font: inherit;
@@ -239,7 +216,7 @@ onBeforeUnmount(() => {
 :global(input:focus-visible),
 :global(summary:focus-visible),
 :global(a:focus-visible) {
-  outline: 3px solid rgb(59 130 246 / 35%);
+  outline: 3px solid var(--color-focus-outline);
   outline-offset: 3px;
 }
 
@@ -254,9 +231,8 @@ onBeforeUnmount(() => {
   gap: 32px;
   min-height: 96px;
   padding: 16px 48px;
-  border-bottom: 1px solid #e2e8f0;
-  background: rgb(255 255 255 / 92%);
-  backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-surface);
 }
 
 .header-identity {
@@ -270,7 +246,7 @@ onBeforeUnmount(() => {
   display: inline-flex;
   gap: 10px;
   align-items: center;
-  color: #0f172a;
+  color: var(--color-text);
   font-weight: 700;
   text-decoration: none;
 }
@@ -281,17 +257,16 @@ onBeforeUnmount(() => {
   height: 32px;
   place-items: center;
   border-radius: 9px;
-  color: white;
-  background: #2563eb;
-  box-shadow: 0 7px 18px rgb(37 99 235 / 22%);
+  color: var(--color-text);
+  background: var(--color-action);
 }
 
 .local-badge {
   padding: 6px 10px;
-  border: 1px solid #dbeafe;
+  border: 1px solid var(--color-border-strong);
   border-radius: 999px;
-  color: #1d4ed8;
-  background: #eff6ff;
+  color: var(--color-pending-text);
+  background: var(--color-pending-surface);
   font-size: 12px;
   font-weight: 700;
 }
@@ -310,7 +285,7 @@ onBeforeUnmount(() => {
 .eyebrow,
 .section-kicker {
   margin: 0 0 10px;
-  color: #2563eb;
+  color: var(--color-link);
   font-size: 12px;
   font-weight: 800;
   letter-spacing: 0.12em;
@@ -332,17 +307,16 @@ h1 {
 .intro-copy {
   max-width: 640px;
   margin-bottom: 0;
-  color: #475569;
+  color: var(--color-text-secondary);
   font-size: 17px;
   line-height: 1.75;
 }
 
 .network-card {
   padding: 32px;
-  border: 1px solid #e2e8f0;
+  border: 1px solid var(--color-border);
   border-radius: 16px;
-  background: #ffffff;
-  box-shadow: 0 20px 50px rgb(15 23 42 / 8%);
+  background: var(--color-surface);
 }
 
 .card-heading {
@@ -360,7 +334,7 @@ h1 {
 
 .section-kicker {
   margin-bottom: 6px;
-  color: #64748b;
+  color: var(--color-text-secondary);
 }
 
 .status-pill {
@@ -370,8 +344,8 @@ h1 {
   align-items: center;
   padding: 7px 11px;
   border-radius: 999px;
-  color: #475569;
-  background: #f1f5f9;
+  color: var(--color-pending-text);
+  background: var(--color-pending-surface);
   font-size: 13px;
   font-weight: 700;
 }
@@ -384,13 +358,13 @@ h1 {
 }
 
 .status-pill--connected {
-  color: #047857;
-  background: #ecfdf5;
+  color: var(--color-success-text);
+  background: var(--color-success-surface);
 }
 
 .status-pill--error {
-  color: #b91c1c;
-  background: #fef2f2;
+  color: var(--color-error-text);
+  background: var(--color-error-surface);
 }
 
 .status-pill--connecting .status-dot {
@@ -399,7 +373,7 @@ h1 {
 
 .status-description {
   margin: 14px 0 24px;
-  color: #64748b;
+  color: var(--color-text-secondary);
   line-height: 1.6;
 }
 
@@ -408,15 +382,15 @@ h1 {
   gap: 12px;
   margin-bottom: 20px;
   padding: 14px 16px;
-  border: 1px solid #fecaca;
+  border: 1px solid var(--color-error-text);
   border-radius: 10px;
-  color: #991b1b;
-  background: #fef2f2;
+  color: var(--color-error-text);
+  background: var(--color-error-surface);
 }
 
 .error-banner p {
   margin: 4px 0 0;
-  color: #b91c1c;
+  color: var(--color-error-text);
   font-size: 14px;
   line-height: 1.5;
 }
@@ -429,8 +403,8 @@ h1 {
   height: 22px;
   place-items: center;
   border-radius: 999px;
-  color: white;
-  background: #dc2626;
+  color: var(--color-text);
+  background: var(--color-danger);
   font-size: 13px;
   font-weight: 800;
 }
@@ -440,9 +414,9 @@ h1 {
   grid-template-columns: minmax(0, 2fr) 0.7fr 0.7fr;
   margin: 0;
   overflow: hidden;
-  border: 1px solid #e2e8f0;
+  border: 1px solid var(--color-border);
   border-radius: 12px;
-  background: #f8fafc;
+  background: var(--color-recessed);
 }
 
 .connection-details div {
@@ -451,12 +425,12 @@ h1 {
 }
 
 .connection-details div + div {
-  border-left: 1px solid #e2e8f0;
+  border-left: 1px solid var(--color-border);
 }
 
 .connection-details dt {
   margin-bottom: 7px;
-  color: #64748b;
+  color: var(--color-text-secondary);
   font-size: 12px;
   font-weight: 700;
 }
@@ -464,7 +438,7 @@ h1 {
 .connection-details dd {
   margin: 0;
   overflow: hidden;
-  color: #1e293b;
+  color: var(--color-text);
   font-size: 14px;
   font-weight: 650;
   text-overflow: ellipsis;
@@ -486,48 +460,48 @@ h1 {
   cursor: pointer;
   transition:
     border-color 140ms ease,
-    background 140ms ease,
-    box-shadow 140ms ease;
+    background 140ms ease;
 }
 
 :global(.button:disabled) {
+  border-color: var(--color-disabled-surface);
+  color: var(--color-text-secondary);
+  background: var(--color-disabled-surface);
   cursor: not-allowed;
-  opacity: 0.55;
 }
 
 :global(.button--secondary) {
-  border: 1px solid #cbd5e1;
-  color: #334155;
-  background: #ffffff;
+  border: 1px solid var(--color-border-strong);
+  color: var(--color-text);
+  background: var(--color-surface);
 }
 
 :global(.button--secondary:hover:not(:disabled)) {
-  border-color: #94a3b8;
-  background: #f8fafc;
+  border-color: var(--color-focus);
+  background: var(--color-recessed);
 }
 
 :global(.button--primary) {
-  border: 1px solid #2563eb;
-  color: #ffffff;
-  background: #2563eb;
-  box-shadow: 0 5px 12px rgb(37 99 235 / 18%);
+  border: 1px solid var(--color-action);
+  color: var(--color-text);
+  background: var(--color-action);
 }
 
 :global(.button--primary:hover:not(:disabled)) {
-  border-color: #1d4ed8;
-  background: #1d4ed8;
+  border-color: var(--color-action-hover);
+  background: var(--color-action-hover);
 }
 
 .advanced-settings {
   margin-top: 24px;
-  border-top: 1px solid #e2e8f0;
+  border-top: 1px solid var(--color-border);
 }
 
 .advanced-settings summary {
   display: flex;
   justify-content: space-between;
   padding: 20px 0 0;
-  color: #334155;
+  color: var(--color-text);
   font-size: 14px;
   font-weight: 700;
   cursor: pointer;
@@ -539,7 +513,7 @@ h1 {
 }
 
 .summary-hint {
-  color: #94a3b8;
+  color: var(--color-text-secondary);
   font-size: 12px;
   font-weight: 600;
 }
@@ -551,14 +525,14 @@ h1 {
 .field label {
   display: block;
   margin-bottom: 5px;
-  color: #1e293b;
+  color: var(--color-text);
   font-size: 14px;
   font-weight: 700;
 }
 
 .field > p {
   margin-bottom: 10px;
-  color: #64748b;
+  color: var(--color-text-secondary);
   font-size: 13px;
 }
 
@@ -572,33 +546,33 @@ h1 {
   min-width: 0;
   height: 40px;
   padding: 0 12px;
-  border: 1px solid #cbd5e1;
+  border: 1px solid var(--color-border-strong);
   border-radius: 8px;
-  color: #0f172a;
-  background: #ffffff;
+  color: var(--color-text);
+  background: var(--color-recessed);
 }
 
 :global(input::placeholder) {
-  color: #94a3b8;
+  color: var(--color-text-secondary);
 }
 
 :global(input:hover) {
-  border-color: #94a3b8;
+  border-color: var(--color-border-strong);
 }
 
 :global(input:focus) {
-  border-color: #2563eb;
+  border-color: var(--color-focus);
 }
 
 .field .field-error {
   margin: 8px 0 0;
-  color: #b91c1c;
+  color: var(--color-error-text);
   font-size: 13px;
 }
 
 .session-note {
   margin: 14px 0 0;
-  color: #94a3b8;
+  color: var(--color-text-secondary);
   font-size: 12px;
 }
 
@@ -608,14 +582,14 @@ h1 {
   align-items: flex-start;
   margin-top: 18px;
   padding: 18px 20px;
-  border: 1px solid #dbeafe;
+  border: 1px solid var(--color-pending-text);
   border-radius: 12px;
-  color: #1e40af;
-  background: rgb(239 246 255 / 75%);
+  color: var(--color-pending-text);
+  background: var(--color-pending-surface);
 }
 
 .safety-mark {
-  background: #2563eb;
+  background: var(--color-action);
 }
 
 .safety-note h2 {
@@ -625,14 +599,14 @@ h1 {
 
 .safety-note p {
   margin-bottom: 0;
-  color: #3b5fab;
+  color: var(--color-text-secondary);
   font-size: 13px;
   line-height: 1.5;
 }
 
 footer {
   padding: 0 48px 32px;
-  color: #94a3b8;
+  color: var(--color-text-secondary);
   font-size: 12px;
   text-align: center;
 }

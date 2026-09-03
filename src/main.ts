@@ -1,6 +1,8 @@
 import { createApp } from 'vue'
 import { createPinia } from 'pinia'
 
+import '@/styles/theme.scss'
+
 import App from './App.vue'
 import { createEthereumTool } from './ethereum/ethereum-tool'
 import { createViemSepoliaRpcAdapter } from './ethereum/viem-sepolia-rpc-adapter'

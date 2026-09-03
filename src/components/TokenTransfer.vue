@@ -121,7 +121,13 @@ watch(
         <p class="transfer-kicker">TOKEN TRANSFER</p>
         <h2 id="token-transfer-heading">提交 Token 转账</h2>
       </div>
-      <span class="transfer-status" data-testid="transfer-status" role="status" aria-live="polite">
+      <span
+        class="transfer-status"
+        :class="`transfer-status--${snapshot.transfer.status}`"
+        data-testid="transfer-status"
+        role="status"
+        aria-live="polite"
+      >
         {{ transferStatusLabel }}
       </span>
     </div>
@@ -309,10 +315,9 @@ watch(
 .transfer-card {
   margin-top: 24px;
   padding: 32px;
-  border: 1px solid #e2e8f0;
+  border: 1px solid var(--color-border);
   border-radius: 16px;
-  background: #ffffff;
-  box-shadow: 0 20px 50px rgb(15 23 42 / 8%);
+  background: var(--color-surface);
 }
 
 .transfer-heading,
@@ -342,7 +347,7 @@ watch(
 
 .transfer-kicker {
   margin-bottom: 6px;
-  color: #64748b;
+  color: var(--color-text-secondary);
   font-size: 12px;
   font-weight: 800;
   letter-spacing: 0.12em;
@@ -351,15 +356,32 @@ watch(
 .transfer-status {
   padding: 7px 11px;
   border-radius: 999px;
-  color: #1d4ed8;
-  background: #eff6ff;
+  color: var(--color-pending-text);
+  background: var(--color-pending-surface);
   font-size: 13px;
   font-weight: 700;
 }
 
+.transfer-status--success {
+  color: var(--color-success-text);
+  background: var(--color-success-surface);
+}
+
+.transfer-status--broadcast-error,
+.transfer-status--unknown {
+  color: var(--color-warning-text);
+  background: var(--color-warning-surface);
+}
+
+.transfer-status--broadcast-failed,
+.transfer-status--failed {
+  color: var(--color-error-text);
+  background: var(--color-error-surface);
+}
+
 .transfer-description {
   margin: 14px 0 24px;
-  color: #64748b;
+  color: var(--color-text-secondary);
   line-height: 1.6;
 }
 
@@ -367,15 +389,15 @@ watch(
   display: grid;
   gap: 5px;
   padding: 20px;
-  border: 1px dashed #cbd5e1;
+  border: 1px dashed var(--color-border-strong);
   border-radius: 12px;
-  color: #64748b;
-  background: #f8fafc;
+  color: var(--color-text-secondary);
+  background: var(--color-recessed);
   font-size: 13px;
 }
 
 .transfer-placeholder strong {
-  color: #334155;
+  color: var(--color-text);
   font-size: 14px;
 }
 
@@ -388,14 +410,14 @@ watch(
 .transfer-field label {
   display: block;
   margin-bottom: 5px;
-  color: #1e293b;
+  color: var(--color-text);
   font-size: 14px;
   font-weight: 700;
 }
 
 .transfer-field p {
   margin-bottom: 10px;
-  color: #64748b;
+  color: var(--color-text-secondary);
   font-size: 13px;
 }
 
@@ -416,31 +438,31 @@ watch(
 
 .field-error {
   margin-top: 8px;
-  color: #b91c1c !important;
+  color: var(--color-error-text) !important;
 }
 
 .transfer-recovery {
   margin: 0;
   padding: 14px 16px;
-  border: 1px solid #bfdbfe;
+  border: 1px solid var(--color-warning-text);
   border-radius: 10px;
-  color: #1e3a8a;
-  background: #eff6ff;
+  color: var(--color-warning-text);
+  background: var(--color-warning-surface);
   font-size: 14px;
 }
 
 .transfer-recovery a {
-  color: #1d4ed8;
+  color: var(--color-link);
   font-weight: 700;
 }
 
 .transfer-error {
   margin: 0;
   padding: 14px 16px;
-  border: 1px solid #fecaca;
+  border: 1px solid var(--color-error-text);
   border-radius: 10px;
-  color: #b91c1c;
-  background: #fef2f2;
+  color: var(--color-error-text);
+  background: var(--color-error-surface);
   font-size: 14px;
 }
 
@@ -449,17 +471,17 @@ watch(
   gap: 6px;
   padding: 16px;
   overflow: hidden;
-  border: 1px solid #bbf7d0;
+  border: 1px solid var(--color-success-text);
   border-radius: 12px;
-  color: #166534;
-  background: #f0fdf4;
+  color: var(--color-success-text);
+  background: var(--color-success-surface);
   font-size: 12px;
   font-weight: 700;
 }
 
 .transfer-result a {
   overflow: hidden;
-  color: #1d4ed8;
+  color: var(--color-link);
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   font-size: 13px;
   text-decoration: none;
