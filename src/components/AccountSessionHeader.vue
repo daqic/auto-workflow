@@ -77,6 +77,7 @@ async function refreshAccountBalance() {
           <span id="account-session-label">专用测试账户</span>
           <span
             class="account-status"
+            :class="`account-status--${snapshot.account.status}`"
             data-testid="account-status"
             role="status"
             aria-live="polite"
@@ -152,7 +153,13 @@ async function refreshAccountBalance() {
     >
       <div class="account-label-row">
         <label id="account-session-label" for="private-key">专用测试账户</label>
-        <span class="account-status" data-testid="account-status" role="status" aria-live="polite">
+        <span
+          class="account-status"
+          :class="`account-status--${snapshot.account.status}`"
+          data-testid="account-status"
+          role="status"
+          aria-live="polite"
+        >
           {{ accountStatusLabel }}
         </span>
       </div>
@@ -226,9 +233,9 @@ async function refreshAccountBalance() {
 .account-import-form,
 .account-public-state {
   padding: 12px 14px;
-  border: 1px solid #e2e8f0;
+  border: 1px solid var(--color-border);
   border-radius: 12px;
-  background: #f8fafc;
+  background: var(--color-recessed);
 }
 
 .account-public-state {
@@ -247,7 +254,7 @@ async function refreshAccountBalance() {
   gap: 10px;
   align-items: center;
   margin-bottom: 7px;
-  color: #334155;
+  color: var(--color-text);
   font-size: 12px;
   font-weight: 800;
 }
@@ -255,15 +262,26 @@ async function refreshAccountBalance() {
 .account-status {
   padding: 2px 7px;
   border-radius: 999px;
-  color: #047857;
-  background: #ecfdf5;
+  color: var(--color-pending-text);
+  background: var(--color-pending-surface);
   font-size: 11px;
   font-weight: 700;
 }
 
-.account-import-form .account-status {
-  color: #475569;
-  background: #e2e8f0;
+.account-status--connected {
+  color: var(--color-success-text);
+  background: var(--color-success-surface);
+}
+
+.account-status--balance-error,
+.account-status--import-error {
+  color: var(--color-error-text);
+  background: var(--color-error-surface);
+}
+
+.account-status--locked {
+  color: var(--color-text-secondary);
+  background: var(--color-disabled-surface);
 }
 
 .private-key-row {
@@ -290,8 +308,8 @@ async function refreshAccountBalance() {
   padding: 0 11px;
   border: 0;
   border-radius: 0 7px 7px 0;
-  color: #2563eb;
-  background: #ffffff;
+  color: var(--color-link);
+  background: var(--color-recessed);
   font-size: 12px;
   font-weight: 700;
   cursor: pointer;
@@ -306,16 +324,16 @@ async function refreshAccountBalance() {
 }
 
 .account-help {
-  color: #64748b;
+  color: var(--color-text-secondary);
 }
 
 .account-disabled-reason {
-  color: #b45309;
+  color: var(--color-warning-text);
 }
 
 .account-error,
 .account-balance--error {
-  color: #b91c1c;
+  color: var(--color-error-text);
 }
 
 .account-address,
@@ -325,7 +343,7 @@ async function refreshAccountBalance() {
 
 .account-address {
   overflow: hidden;
-  color: #1d4ed8;
+  color: var(--color-link);
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   font-size: 12px;
   font-weight: 700;
@@ -335,7 +353,7 @@ async function refreshAccountBalance() {
 
 .account-balance {
   margin-top: 5px;
-  color: #334155;
+  color: var(--color-text);
   font-size: 13px;
   font-weight: 750;
 }
@@ -353,13 +371,13 @@ async function refreshAccountBalance() {
 }
 
 .button--danger {
-  border: 1px solid #fecaca;
-  color: #b91c1c;
-  background: #ffffff;
+  border: 1px solid var(--color-danger);
+  color: var(--color-text);
+  background: var(--color-danger);
 }
 
 .button--danger:hover:not(:disabled) {
-  border-color: #fca5a5;
-  background: #fef2f2;
+  border-color: var(--color-danger-hover);
+  background: var(--color-danger-hover);
 }
 </style>

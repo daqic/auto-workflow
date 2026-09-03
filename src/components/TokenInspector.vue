@@ -131,10 +131,9 @@ async function inspectToken() {
 .token-card {
   margin-top: 24px;
   padding: 32px;
-  border: 1px solid #e2e8f0;
+  border: 1px solid var(--color-border);
   border-radius: 16px;
-  background: #ffffff;
-  box-shadow: 0 20px 50px rgb(15 23 42 / 8%);
+  background: var(--color-surface);
 }
 
 .token-heading,
@@ -160,7 +159,7 @@ async function inspectToken() {
 
 .token-kicker {
   margin-bottom: 6px;
-  color: #64748b;
+  color: var(--color-text-secondary);
   font-size: 12px;
   font-weight: 800;
   letter-spacing: 0.12em;
@@ -169,29 +168,29 @@ async function inspectToken() {
 .token-network {
   padding: 7px 11px;
   border-radius: 999px;
-  color: #1d4ed8;
-  background: #eff6ff;
+  color: var(--color-pending-text);
+  background: var(--color-pending-surface);
   font-size: 13px;
   font-weight: 700;
 }
 
 .token-description {
   margin: 14px 0 24px;
-  color: #64748b;
+  color: var(--color-text-secondary);
   line-height: 1.6;
 }
 
 .token-form label {
   display: block;
   margin-bottom: 5px;
-  color: #1e293b;
+  color: var(--color-text);
   font-size: 14px;
   font-weight: 700;
 }
 
 .token-form p {
   margin-bottom: 10px;
-  color: #64748b;
+  color: var(--color-text-secondary);
   font-size: 13px;
 }
 
@@ -212,50 +211,50 @@ async function inspectToken() {
   display: grid;
   gap: 5px;
   padding: 20px;
-  border: 1px dashed #cbd5e1;
-  color: #64748b;
-  background: #f8fafc;
+  border: 1px dashed var(--color-border-strong);
+  color: var(--color-text-secondary);
+  background: var(--color-recessed);
   font-size: 13px;
 }
 
 .token-placeholder strong {
-  color: #334155;
+  color: var(--color-text);
   font-size: 14px;
 }
 
 .token-placeholder--loading {
   border-style: solid;
-  border-color: #bfdbfe;
-  background: #eff6ff;
+  border-color: var(--color-pending-text);
+  background: var(--color-pending-surface);
 }
 
 .token-error {
   padding: 14px 16px;
-  border: 1px solid #fecaca;
-  color: #b91c1c;
-  background: #fef2f2;
+  border: 1px solid var(--color-error-text);
+  color: var(--color-error-text);
+  background: var(--color-error-surface);
   font-size: 14px;
   line-height: 1.5;
 }
 
 .token-result {
   overflow: hidden;
-  border: 1px solid #bbf7d0;
-  background: #f0fdf4;
+  border: 1px solid var(--color-success-text);
+  background: var(--color-success-surface);
 }
 
 .compatibility-row {
   align-items: center;
   padding: 14px 16px;
-  color: #166534;
+  color: var(--color-success-text);
   font-size: 12px;
 }
 
 .compatibility-badge {
   padding: 5px 9px;
   border-radius: 999px;
-  color: #047857;
-  background: #d1fae5;
+  color: var(--color-success-text);
+  background: var(--color-success-surface);
   font-size: 12px;
   font-weight: 800;
 }
@@ -264,15 +263,15 @@ async function inspectToken() {
   display: grid;
   grid-template-columns: 1.5fr 1fr 0.7fr;
   margin: 0;
-  border-top: 1px solid #bbf7d0;
-  background: #ffffff;
+  border-top: 1px solid var(--color-success-text);
+  background: var(--color-surface);
 }
 
 .token-details div {
   min-width: 0;
   padding: 15px 16px;
-  border-right: 1px solid #e2e8f0;
-  border-bottom: 1px solid #e2e8f0;
+  border-right: 1px solid var(--color-border);
+  border-bottom: 1px solid var(--color-border);
 }
 
 .token-details div:nth-child(3),
@@ -286,7 +285,7 @@ async function inspectToken() {
 
 .token-details dt {
   margin-bottom: 6px;
-  color: #64748b;
+  color: var(--color-text-secondary);
   font-size: 12px;
   font-weight: 700;
 }
@@ -294,7 +293,7 @@ async function inspectToken() {
 .token-details dd {
   margin: 0;
   overflow: hidden;
-  color: #1e293b;
+  color: var(--color-text);
   font-size: 14px;
   font-weight: 650;
   text-overflow: ellipsis;
@@ -302,7 +301,7 @@ async function inspectToken() {
 }
 
 .token-details a {
-  color: #1d4ed8;
+  color: var(--color-link);
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   text-decoration: none;
 }
