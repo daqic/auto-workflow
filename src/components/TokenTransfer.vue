@@ -115,7 +115,16 @@ watch(
 </script>
 
 <template>
-  <section class="transfer-card" aria-labelledby="token-transfer-heading">
+  <section
+    :class="[
+      'transfer-card',
+      snapshot.transfer.isFormVisible
+        ? `transfer-card--${snapshot.transfer.status}`
+        : 'transfer-card--unavailable',
+      { 'transfer-card--field-error': recipientError || amountError },
+    ]"
+    aria-labelledby="token-transfer-heading"
+  >
     <div class="transfer-heading">
       <div>
         <p class="transfer-kicker">TOKEN TRANSFER</p>
@@ -249,7 +258,7 @@ watch(
 
       <p
         v-if="snapshot.transfer.requiresRecovery"
-        class="transfer-recovery"
+        class="transfer-recovery transfer-recovery--required"
         data-testid="transfer-recovery-warning"
         role="status"
       >
@@ -321,6 +330,36 @@ watch(
   background: var(--color-surface);
 }
 
+.transfer-card:not(.transfer-card--unavailable) {
+  position: relative;
+  padding: 31px;
+}
+
+.transfer-card--field-error {
+  height: 410px;
+}
+
+.transfer-card--confirming {
+  height: 378px;
+}
+
+.transfer-card--broadcast-failed,
+.transfer-card--failed {
+  height: 490px;
+}
+
+.transfer-card--unknown {
+  height: 510px;
+}
+
+.transfer-card--broadcast-error {
+  height: 585px;
+}
+
+.transfer-card--success {
+  height: 462px;
+}
+
 .transfer-heading,
 .transfer-actions,
 .amount-row {
@@ -365,6 +404,15 @@ watch(
   background: var(--color-pending-surface);
   font-size: 12px;
   font-weight: 700;
+  white-space: nowrap;
+}
+
+.transfer-card:not(.transfer-card--unavailable) .transfer-status {
+  transform: translateY(-1px);
+}
+
+.transfer-status--broadcast-error {
+  width: 140px;
 }
 
 .transfer-status--success {
@@ -391,6 +439,10 @@ watch(
   line-height: 1.6;
 }
 
+.transfer-card:not(.transfer-card--unavailable) .transfer-description {
+  margin-bottom: 16px;
+}
+
 .transfer-placeholder {
   display: grid;
   gap: 5px;
@@ -410,8 +462,8 @@ watch(
 
 .transfer-form {
   display: grid;
-  grid-template-columns: minmax(0, 1.4fr) minmax(260px, 0.8fr);
-  gap: 20px;
+  grid-template-columns: 470px 284px;
+  gap: 30px;
 }
 
 .transfer-field label {
@@ -420,12 +472,14 @@ watch(
   color: var(--color-text);
   font-size: 14px;
   font-weight: 700;
+  line-height: 1.4;
 }
 
 .transfer-field p {
-  margin-bottom: 10px;
+  margin-bottom: 5px;
   color: var(--color-text-secondary);
   font-size: 13px;
+  line-height: 1.4;
 }
 
 .transfer-field input {
@@ -433,7 +487,26 @@ watch(
 }
 
 .amount-row input {
-  flex: 1;
+  width: 220px;
+}
+
+.amount-row {
+  gap: 10px;
+}
+
+.amount-row .button {
+  width: 54px;
+  padding-right: 8px;
+  padding-left: 8px;
+}
+
+.transfer-field input:disabled {
+  color: var(--color-text-secondary);
+  background: var(--color-disabled-surface);
+}
+
+.transfer-field {
+  position: relative;
 }
 
 .transfer-error,
@@ -443,9 +516,15 @@ watch(
   grid-column: 1 / -1;
 }
 
-.field-error {
-  margin-top: 8px;
-  color: var(--color-error-text) !important;
+.transfer-field .field-error {
+  position: absolute;
+  top: 96px;
+  left: 0;
+  width: 100%;
+  height: 19px;
+  margin: 0;
+  color: var(--color-error-text);
+  line-height: 19px;
 }
 
 .transfer-recovery {
@@ -456,6 +535,12 @@ watch(
   color: var(--color-warning-text);
   background: var(--color-warning-surface);
   font-size: 14px;
+}
+
+.transfer-recovery--required {
+  height: 92px;
+  font-size: 13px;
+  line-height: 1.45;
 }
 
 .transfer-recovery a {
@@ -475,8 +560,9 @@ watch(
 
 .transfer-result {
   display: grid;
-  gap: 6px;
-  padding: 16px;
+  gap: 5px;
+  height: 66px;
+  padding: 13px 15px;
   overflow: hidden;
   border: 1px solid var(--color-success-text);
   border-radius: 12px;
@@ -498,5 +584,125 @@ watch(
 
 .transfer-actions {
   justify-content: flex-end;
+  gap: 16px;
+}
+
+.transfer-card--field-error .transfer-actions,
+.transfer-card--confirming .transfer-actions,
+.transfer-card--broadcast-failed .transfer-actions,
+.transfer-card--failed .transfer-actions,
+.transfer-card--unknown .transfer-actions,
+.transfer-card--broadcast-error .transfer-actions,
+.transfer-card--success .transfer-actions {
+  position: absolute;
+  right: 63px;
+  left: 31px;
+}
+
+.transfer-card--broadcast-failed .transfer-error,
+.transfer-card--failed .transfer-error,
+.transfer-card--unknown .transfer-error,
+.transfer-card--broadcast-error .transfer-error,
+.transfer-card--unknown .transfer-result,
+.transfer-card--failed .transfer-result,
+.transfer-card--confirming .transfer-result,
+.transfer-card--broadcast-error .transfer-recovery--required,
+.transfer-card--broadcast-error .transfer-result,
+.transfer-card--success .transfer-result {
+  position: absolute;
+  right: 31px;
+  left: 31px;
+}
+
+.transfer-card--broadcast-failed .transfer-error,
+.transfer-card--failed .transfer-error,
+.transfer-card--unknown .transfer-error,
+.transfer-card--broadcast-error .transfer-error {
+  top: 245px;
+  height: 72px;
+  line-height: 1.5;
+}
+
+.transfer-card--unknown .transfer-result,
+.transfer-card--failed .transfer-result {
+  top: 333px;
+}
+
+.transfer-card--confirming .transfer-result {
+  top: 245px;
+  height: 50px;
+  padding-top: 6px;
+  padding-bottom: 6px;
+}
+
+.transfer-card--broadcast-error .transfer-recovery--required {
+  top: 333px;
+}
+
+.transfer-card--broadcast-error .transfer-result {
+  top: 441px;
+}
+
+.transfer-card--success .transfer-result {
+  top: 245px;
+}
+
+.transfer-card--field-error .transfer-actions {
+  top: 343px;
+}
+
+.transfer-card--confirming .transfer-actions {
+  top: 305px;
+}
+
+.transfer-card--broadcast-failed .transfer-actions,
+.transfer-card--failed .transfer-actions,
+.transfer-card--unknown .transfer-actions {
+  top: 415px;
+}
+
+.transfer-card--broadcast-error .transfer-actions {
+  top: 523px;
+}
+
+.transfer-card--success .transfer-actions {
+  top: 327px;
+}
+
+.transfer-actions .button[name='new-transfer'] {
+  width: 112px;
+}
+
+.transfer-actions .button[name='query-transfer-status'],
+.transfer-actions .button[name='replay-transfer'] {
+  width: 132px;
+}
+
+.transfer-card--field-error .button[name='submit-transfer'] {
+  width: 142px;
+}
+
+.transfer-card--confirming .button[name='submit-transfer'] {
+  width: 172px;
+}
+
+.transfer-card--broadcast-failed .button[name='submit-transfer'],
+.transfer-card--failed .button[name='submit-transfer'],
+.transfer-card--success .button[name='submit-transfer'] {
+  width: 170px;
+}
+
+.transfer-card--unknown .button[name='submit-transfer'] {
+  width: 154px;
+}
+
+.transfer-card--broadcast-error .button[name='submit-transfer'] {
+  width: 130px;
+}
+
+.transfer-card:not(.transfer-card--editing) .button[name='submit-transfer'] {
+  padding-right: 8px;
+  padding-left: 8px;
+  white-space: nowrap;
 }
 </style>
