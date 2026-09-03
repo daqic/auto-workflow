@@ -62,7 +62,13 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="app-shell">
-    <header class="topbar">
+    <header
+      class="topbar"
+      :class="{
+        'topbar--ready':
+          snapshot.account.status === 'locked' && snapshot.network.canUseChainActions,
+      }"
+    >
       <div class="header-identity">
         <a class="brand" href="/" aria-label="Ethereum Sepolia 工具 Demo 首页">
           <span class="brand-mark" aria-hidden="true">Ξ</span>
@@ -226,26 +232,32 @@ onBeforeUnmount(() => {
 
 .topbar {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 32px;
-  min-height: 96px;
+  min-height: 148px;
   padding: 16px 48px;
   border-bottom: 1px solid var(--color-border);
   background: var(--color-surface);
 }
 
+.topbar--ready {
+  height: 148px;
+}
+
 .header-identity {
   display: flex;
   flex: none;
-  gap: 14px;
+  gap: 12px;
   align-items: center;
+  transform: translateY(36px);
 }
 
 .brand {
   display: inline-flex;
   gap: 10px;
   align-items: center;
+  width: 162px;
   color: var(--color-text);
   font-weight: 700;
   text-decoration: none;
@@ -262,22 +274,27 @@ onBeforeUnmount(() => {
 }
 
 .local-badge {
-  padding: 6px 10px;
-  border: 1px solid var(--color-border-strong);
+  display: grid;
+  width: 96px;
+  height: 25px;
+  padding: 0;
+  place-items: center;
+  border: 0;
   border-radius: 999px;
   color: var(--color-pending-text);
   background: var(--color-pending-surface);
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 700;
 }
 
 .page-shell {
   width: min(880px, calc(100% - 96px));
   margin: 0 auto;
-  padding: 72px 0 48px;
+  padding: 72px 0 50px;
 }
 
 .intro {
+  height: 145px;
   max-width: 720px;
   margin-bottom: 32px;
 }
@@ -287,8 +304,8 @@ onBeforeUnmount(() => {
   margin: 0 0 10px;
   color: var(--color-link);
   font-size: 12px;
-  font-weight: 800;
-  letter-spacing: 0.12em;
+  font-weight: 700;
+  line-height: 1.4;
 }
 
 h1,
@@ -301,7 +318,6 @@ h1 {
   margin-bottom: 16px;
   font-size: 40px;
   line-height: 1.15;
-  letter-spacing: -0.035em;
 }
 
 .intro-copy {
@@ -313,6 +329,7 @@ h1 {
 }
 
 .network-card {
+  min-height: 383px;
   padding: 32px;
   border: 1px solid var(--color-border);
   border-radius: 16px;
@@ -329,7 +346,7 @@ h1 {
 .card-heading h2 {
   margin-bottom: 0;
   font-size: 22px;
-  letter-spacing: -0.02em;
+  line-height: 1.4;
 }
 
 .section-kicker {
@@ -342,11 +359,14 @@ h1 {
   flex: none;
   gap: 8px;
   align-items: center;
+  justify-content: center;
+  width: 80px;
+  height: 28px;
   padding: 7px 11px;
   border-radius: 999px;
   color: var(--color-pending-text);
   background: var(--color-pending-surface);
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 700;
 }
 
@@ -372,8 +392,9 @@ h1 {
 }
 
 .status-description {
-  margin: 14px 0 24px;
+  margin: 14px 0 13px;
   color: var(--color-text-secondary);
+  font-size: 14px;
   line-height: 1.6;
 }
 
@@ -417,11 +438,12 @@ h1 {
   border: 1px solid var(--color-border);
   border-radius: 12px;
   background: var(--color-recessed);
+  height: 70px;
 }
 
 .connection-details div {
   min-width: 0;
-  padding: 16px;
+  padding: 12px 16px;
 }
 
 .connection-details div + div {
@@ -440,7 +462,7 @@ h1 {
   overflow: hidden;
   color: var(--color-text);
   font-size: 14px;
-  font-weight: 650;
+  font-weight: 700;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -449,6 +471,10 @@ h1 {
   display: flex;
   justify-content: flex-end;
   margin-top: 20px;
+}
+
+.primary-actions .button {
+  width: 116px;
 }
 
 :global(.button) {
@@ -493,7 +519,7 @@ h1 {
 }
 
 .advanced-settings {
-  margin-top: 24px;
+  margin-top: 14px;
   border-top: 1px solid var(--color-border);
 }
 
@@ -515,7 +541,7 @@ h1 {
 .summary-hint {
   color: var(--color-text-secondary);
   font-size: 12px;
-  font-weight: 600;
+  font-weight: 700;
 }
 
 .rpc-form {
@@ -581,6 +607,7 @@ h1 {
   gap: 12px;
   align-items: flex-start;
   margin-top: 18px;
+  height: 82px;
   padding: 18px 20px;
   border: 1px solid var(--color-pending-text);
   border-radius: 12px;
@@ -605,9 +632,10 @@ h1 {
 }
 
 footer {
-  padding: 0 48px 32px;
+  padding: 0 48px 27px;
   color: var(--color-text-secondary);
   font-size: 12px;
+  line-height: 1.4;
   text-align: center;
 }
 

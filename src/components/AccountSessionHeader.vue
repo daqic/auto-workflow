@@ -148,6 +148,10 @@ async function refreshAccountBalance() {
     <form
       v-else
       class="account-import-form"
+      :class="{
+        'account-import-form--ready':
+          snapshot.account.status === 'locked' && snapshot.network.canUseChainActions,
+      }"
       data-testid="account-import-form"
       @submit.prevent="importAccount"
     >
@@ -226,16 +230,21 @@ async function refreshAccountBalance() {
 
 <style scoped>
 .account-session {
-  width: min(720px, 100%);
+  width: 720px;
   min-width: 0;
 }
 
 .account-import-form,
 .account-public-state {
+  min-height: 114px;
   padding: 12px 14px;
   border: 1px solid var(--color-border);
   border-radius: 12px;
   background: var(--color-recessed);
+}
+
+.account-import-form--ready {
+  height: 114px;
 }
 
 .account-public-state {
@@ -256,11 +265,19 @@ async function refreshAccountBalance() {
   margin-bottom: 7px;
   color: var(--color-text);
   font-size: 12px;
-  font-weight: 800;
+  font-weight: 700;
+}
+
+.account-import-form .account-label-row label {
+  width: 100px;
 }
 
 .account-status {
-  padding: 2px 7px;
+  display: grid;
+  width: 54px;
+  height: 22px;
+  padding: 0;
+  place-items: center;
   border-radius: 999px;
   color: var(--color-pending-text);
   background: var(--color-pending-surface);
@@ -286,8 +303,8 @@ async function refreshAccountBalance() {
 
 .private-key-row {
   display: grid;
-  grid-template-columns: minmax(300px, 1fr) auto;
-  gap: 8px;
+  grid-template-columns: 560px 120px;
+  gap: 12px;
 }
 
 .private-key-field {
@@ -303,13 +320,14 @@ async function refreshAccountBalance() {
 .reveal-button {
   position: absolute;
   top: 1px;
-  right: 1px;
+  right: 0;
+  width: 48px;
   height: 38px;
-  padding: 0 11px;
-  border: 0;
-  border-radius: 0 7px 7px 0;
+  padding: 0;
+  border: 1px solid var(--color-border-strong);
+  border-radius: 8px;
   color: var(--color-link);
-  background: var(--color-recessed);
+  background: var(--color-surface);
   font-size: 12px;
   font-weight: 700;
   cursor: pointer;
@@ -355,7 +373,7 @@ async function refreshAccountBalance() {
   margin-top: 5px;
   color: var(--color-text);
   font-size: 13px;
-  font-weight: 750;
+  font-weight: 700;
 }
 
 .account-actions {

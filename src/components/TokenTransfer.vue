@@ -313,6 +313,7 @@ watch(
 
 <style scoped>
 .transfer-card {
+  min-height: 266px;
   margin-top: 24px;
   padding: 32px;
   border: 1px solid var(--color-border);
@@ -342,23 +343,27 @@ watch(
 .transfer-heading h2 {
   margin-bottom: 0;
   font-size: 22px;
-  letter-spacing: -0.02em;
+  line-height: 1.4;
 }
 
 .transfer-kicker {
   margin-bottom: 6px;
   color: var(--color-text-secondary);
   font-size: 12px;
-  font-weight: 800;
-  letter-spacing: 0.12em;
+  font-weight: 700;
+  line-height: 1.4;
 }
 
 .transfer-status {
+  display: grid;
+  width: 104px;
+  height: 28px;
   padding: 7px 11px;
+  place-items: center;
   border-radius: 999px;
   color: var(--color-pending-text);
   background: var(--color-pending-surface);
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 700;
 }
 
@@ -380,8 +385,9 @@ watch(
 }
 
 .transfer-description {
-  margin: 14px 0 24px;
+  margin: 14px 0 18px;
   color: var(--color-text-secondary);
+  font-size: 14px;
   line-height: 1.6;
 }
 
@@ -389,7 +395,8 @@ watch(
   display: grid;
   gap: 5px;
   padding: 20px;
-  border: 1px dashed var(--color-border-strong);
+  min-height: 78px;
+  border: 1px solid var(--color-border-strong);
   border-radius: 12px;
   color: var(--color-text-secondary);
   background: var(--color-recessed);
