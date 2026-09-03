@@ -70,7 +70,11 @@ async function refreshAccountBalance() {
 </script>
 
 <template>
-  <section class="account-session" aria-label="账户会话">
+  <section
+    class="account-session"
+    :class="{ 'account-session--error': snapshot.account.status === 'import-error' }"
+    aria-label="账户会话"
+  >
     <div v-if="snapshot.account.address" class="account-public-state">
       <div class="account-copy">
         <div class="account-label-row">
@@ -149,6 +153,7 @@ async function refreshAccountBalance() {
       v-else
       class="account-import-form"
       :class="{
+        'account-import-form--error': snapshot.account.status === 'import-error',
         'account-import-form--ready':
           snapshot.account.status === 'locked' && snapshot.network.canUseChainActions,
       }"
@@ -180,6 +185,7 @@ async function refreshAccountBalance() {
             placeholder="0x + 64 位十六进制字符"
             required
             :disabled="!snapshot.account.canImport"
+            :aria-invalid="snapshot.account.error ? 'true' : undefined"
             :aria-describedby="
               snapshot.account.error ? 'private-key-help account-import-error' : 'private-key-help'
             "
@@ -234,6 +240,10 @@ async function refreshAccountBalance() {
   min-width: 0;
 }
 
+.account-session--error {
+  width: 880px;
+}
+
 .account-import-form,
 .account-public-state {
   min-height: 114px;
@@ -245,6 +255,42 @@ async function refreshAccountBalance() {
 
 .account-import-form--ready {
   height: 114px;
+}
+
+.account-import-form--error {
+  height: 206px;
+}
+
+.account-import-form--error .account-label-row {
+  gap: 11px;
+  margin-bottom: 13px;
+}
+
+.account-import-form--error .account-status {
+  width: 64px;
+  transform: translateY(-3px);
+}
+
+.account-import-form--error .private-key-row {
+  grid-template-columns: 650px 120px;
+  gap: 14px;
+}
+
+.account-import-form--error input {
+  border-color: var(--color-error-text);
+}
+
+.account-import-form--error .account-help {
+  margin-top: 39px;
+}
+
+.account-import-form--error .account-error {
+  margin-top: 13px;
+  font-size: 12px;
+}
+
+.account-import-form--error .private-key-row > .button {
+  transform: translateY(25px);
 }
 
 .account-public-state {

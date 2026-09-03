@@ -1,13 +1,12 @@
 import { expect, test, type Page } from '@playwright/test'
 
-import { defaultRpcUrl, fulfillChainId } from './support/rpc'
+import { installReadyRpc } from './support/rpc'
+import { prepareVisualCapture } from './support/visual'
 
 async function openReadyPage(page: Page) {
   expect(page.viewportSize()).toEqual({ height: 900, width: 1280 })
 
-  await page.route(`${defaultRpcUrl}/**`, async (route) => {
-    await fulfillChainId(route, 11_155_111)
-  })
+  await installReadyRpc(page)
 
   await page.goto('/')
   await expect(page.getByTestId('network-status')).toContainText('已连接')
@@ -31,26 +30,7 @@ async function openReadyPage(page: Page) {
     { height: 266, width: 880, x: 200, y: 1208 },
     { height: 82, width: 880, x: 200, y: 1492 },
   ])
-  await page.evaluate(() => document.fonts.ready)
-
-  await expect.poll(() => page.evaluate(() => document.fonts.status)).toBe('loaded')
-  await expect
-    .poll(() =>
-      page.evaluate(() => ({
-        family: getComputedStyle(document.body).fontFamily,
-        loaded: [...document.fonts].some(
-          (font) => font.family === 'Inter Variable' && font.status === 'loaded',
-        ),
-        normal: document.fonts.check('400 14px "Inter Variable"'),
-        strong: document.fonts.check('700 14px "Inter Variable"'),
-      })),
-    )
-    .toEqual({
-      family: '"Inter Variable", ui-sans-serif, system-ui, sans-serif',
-      loaded: true,
-      normal: true,
-      strong: true,
-    })
+  await prepareVisualCapture(page)
 }
 
 test('matches the approved Penpot Dark Ready composition', async ({ page }) => {

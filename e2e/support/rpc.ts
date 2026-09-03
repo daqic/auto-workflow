@@ -1,6 +1,12 @@
-import type { Route } from '@playwright/test'
+import type { Page, Route } from '@playwright/test'
 
 export const defaultRpcUrl = 'https://ethereum-sepolia-rpc.publicnode.com'
+
+export async function installReadyRpc(page: Page) {
+  await page.route(`${defaultRpcUrl}/**`, async (route) => {
+    await fulfillChainId(route, 11_155_111)
+  })
+}
 
 export function readRpcBody(route: Route): Record<string, unknown> {
   const body: unknown = JSON.parse(route.request().postData() ?? '{}')
