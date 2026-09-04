@@ -54,6 +54,12 @@ export async function expectSingleLineText(target: Locator) {
     .toBe(1)
 }
 
+export async function expectInterVariableFont(target: Locator) {
+  await expect
+    .poll(() => target.evaluate((element) => getComputedStyle(element).fontFamily))
+    .toBe('"Inter Variable", ui-sans-serif, system-ui, sans-serif')
+}
+
 export async function prepareVisualCapture(page: Page) {
   await page.evaluate(() => document.fonts.ready)
   await expect.poll(() => page.evaluate(() => document.fonts.status)).toBe('loaded')
