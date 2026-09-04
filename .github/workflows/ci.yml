@@ -45,6 +45,9 @@ jobs:
     name: e2e
     needs: ci
     runs-on: ubuntu-latest
+    container:
+      image: mcr.microsoft.com/playwright:v1.62.1-noble
+      options: --ipc=host
     timeout-minutes: 20
     steps:
       - name: Checkout
@@ -65,9 +68,6 @@ jobs:
 
       - name: Build application
         run: pnpm run build-only
-
-      - name: Install Chromium
-        run: pnpm exec playwright install --with-deps chromium
 
       - name: Run browser tests
         run: pnpm run test:e2e

@@ -13,7 +13,10 @@ async function inspectToken() {
 </script>
 
 <template>
-  <section class="token-card" aria-labelledby="token-inspector-heading">
+  <section
+    :class="['token-card', `token-card--${snapshot.token.status}`]"
+    aria-labelledby="token-inspector-heading"
+  >
     <div class="token-heading">
       <div>
         <p class="token-kicker">TOKEN INSPECTOR</p>
@@ -42,6 +45,7 @@ async function inspectToken() {
           placeholder="0x..."
           required
           :disabled="!snapshot.token.canInspect"
+          :aria-invalid="snapshot.token.error ? 'true' : undefined"
           :aria-describedby="
             snapshot.token.error ? 'token-address-help token-error' : 'token-address-help'
           "
@@ -129,11 +133,20 @@ async function inspectToken() {
 
 <style scoped>
 .token-card {
+  height: 380px;
   margin-top: 24px;
   padding: 32px;
   border: 1px solid var(--color-border);
   border-radius: 16px;
   background: var(--color-surface);
+}
+
+.token-card--error {
+  height: 360px;
+}
+
+.token-card--compatible {
+  height: 562px;
 }
 
 .token-heading,
@@ -154,15 +167,15 @@ async function inspectToken() {
 .token-heading h2 {
   margin-bottom: 0;
   font-size: 22px;
-  letter-spacing: -0.02em;
+  line-height: 1.4;
 }
 
 .token-kicker {
   margin-bottom: 6px;
   color: var(--color-text-secondary);
   font-size: 12px;
-  font-weight: 800;
-  letter-spacing: 0.12em;
+  font-weight: 700;
+  line-height: 1.4;
 }
 
 .token-network {
@@ -175,8 +188,9 @@ async function inspectToken() {
 }
 
 .token-description {
-  margin: 14px 0 24px;
+  margin: 14px 0 25px;
   color: var(--color-text-secondary);
+  font-size: 14px;
   line-height: 1.6;
 }
 
@@ -196,8 +210,18 @@ async function inspectToken() {
 
 .token-field-action {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: 697px 107px;
   gap: 10px;
+}
+
+.token-field-action .button {
+  padding-right: 8px;
+  padding-left: 8px;
+  white-space: nowrap;
+}
+
+.token-field-action input:disabled {
+  color: var(--color-text-secondary);
 }
 
 .token-placeholder,
@@ -215,6 +239,7 @@ async function inspectToken() {
   color: var(--color-text-secondary);
   background: var(--color-recessed);
   font-size: 13px;
+  min-height: 86px;
 }
 
 .token-placeholder strong {
@@ -238,40 +263,56 @@ async function inspectToken() {
 }
 
 .token-result {
+  height: 268px;
   overflow: hidden;
   border: 1px solid var(--color-success-text);
   background: var(--color-success-surface);
 }
 
 .compatibility-row {
+  height: 52px;
+  gap: 16px;
   align-items: center;
+  justify-content: flex-start;
   padding: 14px 16px;
   color: var(--color-success-text);
   font-size: 12px;
 }
 
 .compatibility-badge {
-  padding: 5px 9px;
+  display: grid;
+  flex: none;
+  width: 116px;
+  height: 24px;
+  padding: 0 9px;
+  place-items: center;
   border-radius: 999px;
   color: var(--color-success-text);
   background: var(--color-success-surface);
   font-size: 12px;
-  font-weight: 800;
+  font-weight: 700;
 }
 
 .token-details {
   display: grid;
-  grid-template-columns: 1.5fr 1fr 0.7fr;
-  margin: 0;
-  border-top: 1px solid var(--color-success-text);
+  grid-template-columns: 382px 254px 178px;
+  grid-auto-rows: 72px;
+  width: 814px;
+  height: 216px;
+  margin: -1px 0 0 -1px;
   background: var(--color-surface);
 }
 
 .token-details div {
   min-width: 0;
+  height: 72px;
   padding: 15px 16px;
   border-right: 1px solid var(--color-border);
   border-bottom: 1px solid var(--color-border);
+}
+
+.token-details div:nth-child(-n + 3) {
+  border-top: 1px solid var(--color-border);
 }
 
 .token-details div:nth-child(3),
@@ -295,14 +336,13 @@ async function inspectToken() {
   overflow: hidden;
   color: var(--color-text);
   font-size: 14px;
-  font-weight: 650;
+  font-weight: 700;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .token-details a {
   color: var(--color-link);
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   text-decoration: none;
 }
 
