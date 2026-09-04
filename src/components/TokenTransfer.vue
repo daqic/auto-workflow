@@ -332,32 +332,80 @@ watch(
 
 .transfer-card:not(.transfer-card--unavailable) {
   position: relative;
+  height: var(--transfer-card-height, auto);
   padding: 31px;
 }
 
 .transfer-card--field-error {
-  height: 410px;
+  --transfer-actions-top: 343px;
+  --transfer-card-height: 410px;
+  --transfer-state-position: absolute;
+  --transfer-submit-width: 142px;
 }
 
 .transfer-card--confirming {
-  height: 378px;
+  --transfer-actions-top: 305px;
+  --transfer-card-height: 378px;
+  --transfer-result-height: 50px;
+  --transfer-result-padding: 6px 15px;
+  --transfer-result-top: 245px;
+  --transfer-state-position: absolute;
+  --transfer-submit-width: 172px;
 }
 
 .transfer-card--broadcast-failed,
 .transfer-card--failed {
-  height: 490px;
+  --transfer-actions-top: 415px;
+  --transfer-card-height: 490px;
+  --transfer-error-top: 245px;
+  --transfer-error-height: 72px;
+  --transfer-error-line-height: 1.5;
+  --transfer-state-position: absolute;
+  --transfer-status-background: var(--color-error-surface);
+  --transfer-status-color: var(--color-error-text);
+  --transfer-submit-width: 170px;
+}
+
+.transfer-card--failed {
+  --transfer-result-top: 333px;
 }
 
 .transfer-card--unknown {
-  height: 510px;
+  --transfer-actions-top: 415px;
+  --transfer-card-height: 510px;
+  --transfer-error-top: 245px;
+  --transfer-error-height: 72px;
+  --transfer-error-line-height: 1.5;
+  --transfer-result-top: 333px;
+  --transfer-state-position: absolute;
+  --transfer-status-background: var(--color-warning-surface);
+  --transfer-status-color: var(--color-warning-text);
+  --transfer-submit-width: 154px;
 }
 
 .transfer-card--broadcast-error {
-  height: 585px;
+  --transfer-actions-top: 523px;
+  --transfer-card-height: 585px;
+  --transfer-error-top: 245px;
+  --transfer-error-height: 72px;
+  --transfer-error-line-height: 1.5;
+  --transfer-recovery-top: 333px;
+  --transfer-result-top: 441px;
+  --transfer-state-position: absolute;
+  --transfer-status-background: var(--color-warning-surface);
+  --transfer-status-color: var(--color-warning-text);
+  --transfer-status-width: 140px;
+  --transfer-submit-width: 130px;
 }
 
 .transfer-card--success {
-  height: 462px;
+  --transfer-actions-top: 327px;
+  --transfer-card-height: 462px;
+  --transfer-result-top: 245px;
+  --transfer-state-position: absolute;
+  --transfer-status-background: var(--color-success-surface);
+  --transfer-status-color: var(--color-success-text);
+  --transfer-submit-width: 170px;
 }
 
 .transfer-heading,
@@ -395,13 +443,13 @@ watch(
 
 .transfer-status {
   display: grid;
-  width: 104px;
+  width: var(--transfer-status-width, 104px);
   height: 28px;
   padding: 7px 11px;
   place-items: center;
   border-radius: 999px;
-  color: var(--color-pending-text);
-  background: var(--color-pending-surface);
+  color: var(--transfer-status-color, var(--color-pending-text));
+  background: var(--transfer-status-background, var(--color-pending-surface));
   font-size: 12px;
   font-weight: 700;
   white-space: nowrap;
@@ -409,27 +457,6 @@ watch(
 
 .transfer-card:not(.transfer-card--unavailable) .transfer-status {
   transform: translateY(-1px);
-}
-
-.transfer-status--broadcast-error {
-  width: 140px;
-}
-
-.transfer-status--success {
-  color: var(--color-success-text);
-  background: var(--color-success-surface);
-}
-
-.transfer-status--broadcast-error,
-.transfer-status--unknown {
-  color: var(--color-warning-text);
-  background: var(--color-warning-surface);
-}
-
-.transfer-status--broadcast-failed,
-.transfer-status--failed {
-  color: var(--color-error-text);
-  background: var(--color-error-surface);
 }
 
 .transfer-description {
@@ -538,6 +565,10 @@ watch(
 }
 
 .transfer-recovery--required {
+  position: var(--transfer-state-position, static);
+  top: var(--transfer-recovery-top, auto);
+  right: 31px;
+  left: 31px;
   height: 92px;
   font-size: 13px;
   line-height: 1.45;
@@ -549,6 +580,11 @@ watch(
 }
 
 .transfer-error {
+  position: var(--transfer-state-position, static);
+  top: var(--transfer-error-top, auto);
+  right: 31px;
+  left: 31px;
+  height: var(--transfer-error-height, auto);
   margin: 0;
   padding: 14px 16px;
   border: 1px solid var(--color-error-text);
@@ -556,13 +592,18 @@ watch(
   color: var(--color-error-text);
   background: var(--color-error-surface);
   font-size: 14px;
+  line-height: var(--transfer-error-line-height, normal);
 }
 
 .transfer-result {
   display: grid;
   gap: 5px;
-  height: 66px;
-  padding: 13px 15px;
+  position: var(--transfer-state-position, static);
+  top: var(--transfer-result-top, auto);
+  right: 31px;
+  left: 31px;
+  height: var(--transfer-result-height, 66px);
+  padding: var(--transfer-result-padding, 13px 15px);
   overflow: hidden;
   border: 1px solid var(--color-success-text);
   border-radius: 12px;
@@ -575,7 +616,6 @@ watch(
 .transfer-result a {
   overflow: hidden;
   color: var(--color-link);
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   font-size: 13px;
   text-decoration: none;
   text-overflow: ellipsis;
@@ -583,90 +623,12 @@ watch(
 }
 
 .transfer-actions {
-  justify-content: flex-end;
-  gap: 16px;
-}
-
-.transfer-card--field-error .transfer-actions,
-.transfer-card--confirming .transfer-actions,
-.transfer-card--broadcast-failed .transfer-actions,
-.transfer-card--failed .transfer-actions,
-.transfer-card--unknown .transfer-actions,
-.transfer-card--broadcast-error .transfer-actions,
-.transfer-card--success .transfer-actions {
-  position: absolute;
+  position: var(--transfer-state-position, static);
+  top: var(--transfer-actions-top, auto);
   right: 63px;
   left: 31px;
-}
-
-.transfer-card--broadcast-failed .transfer-error,
-.transfer-card--failed .transfer-error,
-.transfer-card--unknown .transfer-error,
-.transfer-card--broadcast-error .transfer-error,
-.transfer-card--unknown .transfer-result,
-.transfer-card--failed .transfer-result,
-.transfer-card--confirming .transfer-result,
-.transfer-card--broadcast-error .transfer-recovery--required,
-.transfer-card--broadcast-error .transfer-result,
-.transfer-card--success .transfer-result {
-  position: absolute;
-  right: 31px;
-  left: 31px;
-}
-
-.transfer-card--broadcast-failed .transfer-error,
-.transfer-card--failed .transfer-error,
-.transfer-card--unknown .transfer-error,
-.transfer-card--broadcast-error .transfer-error {
-  top: 245px;
-  height: 72px;
-  line-height: 1.5;
-}
-
-.transfer-card--unknown .transfer-result,
-.transfer-card--failed .transfer-result {
-  top: 333px;
-}
-
-.transfer-card--confirming .transfer-result {
-  top: 245px;
-  height: 50px;
-  padding-top: 6px;
-  padding-bottom: 6px;
-}
-
-.transfer-card--broadcast-error .transfer-recovery--required {
-  top: 333px;
-}
-
-.transfer-card--broadcast-error .transfer-result {
-  top: 441px;
-}
-
-.transfer-card--success .transfer-result {
-  top: 245px;
-}
-
-.transfer-card--field-error .transfer-actions {
-  top: 343px;
-}
-
-.transfer-card--confirming .transfer-actions {
-  top: 305px;
-}
-
-.transfer-card--broadcast-failed .transfer-actions,
-.transfer-card--failed .transfer-actions,
-.transfer-card--unknown .transfer-actions {
-  top: 415px;
-}
-
-.transfer-card--broadcast-error .transfer-actions {
-  top: 523px;
-}
-
-.transfer-card--success .transfer-actions {
-  top: 327px;
+  justify-content: flex-end;
+  gap: 16px;
 }
 
 .transfer-actions .button[name='new-transfer'] {
@@ -678,26 +640,8 @@ watch(
   width: 132px;
 }
 
-.transfer-card--field-error .button[name='submit-transfer'] {
-  width: 142px;
-}
-
-.transfer-card--confirming .button[name='submit-transfer'] {
-  width: 172px;
-}
-
-.transfer-card--broadcast-failed .button[name='submit-transfer'],
-.transfer-card--failed .button[name='submit-transfer'],
-.transfer-card--success .button[name='submit-transfer'] {
-  width: 170px;
-}
-
-.transfer-card--unknown .button[name='submit-transfer'] {
-  width: 154px;
-}
-
-.transfer-card--broadcast-error .button[name='submit-transfer'] {
-  width: 130px;
+.transfer-actions .button[name='submit-transfer'] {
+  width: var(--transfer-submit-width, auto);
 }
 
 .transfer-card:not(.transfer-card--editing) .button[name='submit-transfer'] {

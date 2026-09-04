@@ -408,7 +408,6 @@ async function refreshAccountBalance() {
 .account-address {
   overflow: hidden;
   color: var(--color-link);
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   font-size: 12px;
   font-weight: 700;
   text-overflow: ellipsis;

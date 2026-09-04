@@ -7,6 +7,7 @@ import {
   type TransferRpcScenarioOptions,
 } from './support/transfer'
 import {
+  expectInterVariableFont,
   expectRegionSize,
   expectRelativeBox,
   expectSingleLineText,
@@ -26,7 +27,10 @@ async function openVisualTransferForm(
 ) {
   expect(page.viewportSize()).toEqual({ height: 900, width: 1280 })
 
-  return openTransferForm(page, scenario)
+  const region = await openTransferForm(page, scenario)
+  await expectInterVariableFont(page.getByTestId('account-address'))
+
+  return region
 }
 
 async function captureTransferState(page: Page, height: number, name: string) {
@@ -109,6 +113,7 @@ test('matches the approved Penpot Dark Transfer Pending Confirmation state', asy
       'href',
       `https://sepolia.etherscan.io/tx/${scenario.submittedHash()}`,
     )
+    await expectInterVariableFont(page.getByTestId('transaction-hash'))
     await expectRelativeBox(region, page.getByTestId('transaction-hash').locator('..'), {
       height: 50,
       width: 816,
